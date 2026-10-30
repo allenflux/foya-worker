@@ -48,7 +48,7 @@ class P0OptionalFeeTest {
         try {
             AppConfig config = new AppConfig(); config.reportDays = 1; config.amountsEnabled = true;
             config.p0Endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/api/tasks/list";
-            StatsService service = new StatsService(directory);
+            StatsService service = new StatsService(new LocalTestDailyCacheStore(directory));
             LocalDate date = LocalDate.of(2024, 1, 2);
             DailyStats day = service.pullDay(config, date, false, null);
             assertEquals(216, day.totalCount);
@@ -138,7 +138,7 @@ class P0OptionalFeeTest {
         ((ObjectNode) json.path("buckets").get(0)).remove("missingFeeCount");
         Path file = directory.resolve("cache").resolve(date + ".json");
         FilesSupport.writeJson(file, json);
-        StatsService service = new StatsService(directory);
+        StatsService service = new StatsService(new LocalTestDailyCacheStore(directory));
         assertEquals(0, service.cachedDays(config, date, 1).getFirst().missingFeeCount);
         json.put("missingFeeCount", 1);
         FilesSupport.writeJson(file, json);

@@ -82,7 +82,7 @@ class WorkerMultiBotTest {
 
     @Test void failedFirstBotDoesNotPreventSecondBotAndDeliveryStatesAreIndependent() throws Exception {
         URI base = telegramMock(true);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(base))) {
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(base))) {
             configure(worker, true, "09:00", "09:30", false, DAY);
             String report = worker.reportResponse(DAY).get("text").toString();
             worker.send(DAY);
@@ -103,7 +103,7 @@ class WorkerMultiBotTest {
 
     @Test void manualSendByBotIdOnlySendsToSelectedBot() throws Exception {
         URI base = telegramMock(false);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(base))) {
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(base))) {
             configure(worker, true, "09:00", "09:30", false, DAY);
             worker.send(DAY, "bot-two");
             assertEquals("completed", awaitFinished(worker));
@@ -116,7 +116,7 @@ class WorkerMultiBotTest {
 
     @Test void disabledBotIsExcludedFromAllBotsSend() throws Exception {
         URI base = telegramMock(false);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(base))) {
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(base))) {
             configure(worker, false, "09:00", "09:30", false, DAY);
             worker.send(DAY);
             assertEquals("completed", awaitFinished(worker));
@@ -133,7 +133,7 @@ class WorkerMultiBotTest {
         assumeTrue(LocalTime.now(zone).isBefore(LocalTime.of(23, 59)), "Avoid the last minute of the day for the future-send-time fixture");
         LocalDate yesterday = LocalDate.now(zone).minusDays(1);
         URI base = telegramMock(false);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(base))) {
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(base))) {
             configure(worker, true, "00:00", "23:59", true, yesterday);
             var tick = WorkerService.class.getDeclaredMethod("scheduledTick");
             tick.setAccessible(true);

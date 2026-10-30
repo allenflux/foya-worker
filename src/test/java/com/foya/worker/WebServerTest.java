@@ -29,7 +29,7 @@ class WebServerTest {
 
     @BeforeEach
     void start() throws Exception {
-        worker = new WorkerService(directory);
+        worker = TestWorkers.create(directory);
         server = new WebServer(worker, "0.0.0.0", 0);
         server.start();
         base = "http://127.0.0.1:" + server.port();

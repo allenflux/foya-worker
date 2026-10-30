@@ -65,7 +65,7 @@ class TaskTypePriceReportTest {
         Path file = directory.resolve("cache").resolve(DATE + ".json");
         FilesSupport.writeJson(file, raw);
         byte[] cacheBefore = Files.readAllBytes(file);
-        StatsService stats = new StatsService(directory);
+        StatsService stats = new StatsService(new LocalTestDailyCacheStore(directory));
         List<DailyStats> cached = stats.cachedDays(config, DATE, 1);
         byte[] inputBefore = Json.MAPPER.writeValueAsBytes(cached);
         var first = new ReportService().build(config, cached);

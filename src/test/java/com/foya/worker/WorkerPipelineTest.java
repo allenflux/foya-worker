@@ -78,7 +78,7 @@ class WorkerPipelineTest {
         upstream.start();
         URI upstreamBase = URI.create("http://127.0.0.1:" + upstream.getAddress().getPort());
         try {
-            try (WorkerService worker = new WorkerService(directory, new TelegramClient(upstreamBase));
+            try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(upstreamBase));
                  WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
                 web.start();
                 String base = "http://127.0.0.1:" + web.port();
@@ -135,7 +135,7 @@ class WorkerPipelineTest {
                 assertEquals("sent", ledger.elements().next().path("status").asText());
             }
             // Restart from the same persisted cache/config/ledger, then deliberately remove a required day.
-            try (WorkerService restarted = new WorkerService(directory, new TelegramClient(upstreamBase));
+            try (WorkerService restarted = TestWorkers.create(directory, new TelegramClient(upstreamBase));
                  WebServer web = new WebServer(restarted, "127.0.0.1", 0)) {
                 web.start();
                 String base = "http://127.0.0.1:" + web.port();

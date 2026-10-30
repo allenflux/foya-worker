@@ -219,7 +219,7 @@ class TelegramDirectoryTest {
         URI base = mock();
         TelegramDirectory discovery = new TelegramDirectory(directory, base);
         LocalDate date = LocalDate.of(2026, 10, 29);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(base), discovery)) {
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(base), discovery)) {
             worker.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1, "llmEnabled", false,
                     "telegramBots", List.of(Map.of("id", "one", "name", "自动登记机器人", "token", ONE,
                             "chatId", "", "threadId", "", "enabled", true, "autoDiscover", true, "sendTime", "09:00")))));

@@ -114,7 +114,7 @@ class WorkerLlmTest {
     @Test
     void summaryEndpointAppendsAiToOriginalAndManualSendReusesIdenticalPreview() throws Exception {
         URI mockBase = startMock(200);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(mockBase));
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(mockBase));
              WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
             configure(worker, mockBase, true, true);
             web.start();
@@ -152,7 +152,7 @@ class WorkerLlmTest {
     @Test
     void unauthorizedLlmStillCompletesManualDeliveryOfOriginalAndLogsFallback() throws Exception {
         URI mockBase = startMock(401);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(mockBase));
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(mockBase));
              WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
             configure(worker, mockBase, true, true);
             web.start();
@@ -175,7 +175,7 @@ class WorkerLlmTest {
     @Test
     void disabledLlmNeverCallsModelAndSendsOriginal() throws Exception {
         URI mockBase = startMock(200);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(mockBase));
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(mockBase));
              WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
             configure(worker, mockBase, false, true);
             web.start();
@@ -196,7 +196,7 @@ class WorkerLlmTest {
         assumeTrue(System.getenv("LLM_API_KEY") == null || System.getenv("LLM_API_KEY").isBlank(),
                 "An environment-provided key intentionally overrides the missing-key test configuration");
         URI mockBase = startMock(200);
-        try (WorkerService worker = new WorkerService(directory, new TelegramClient(mockBase));
+        try (WorkerService worker = TestWorkers.create(directory, new TelegramClient(mockBase));
              WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
             configure(worker, mockBase, true, false);
             web.start();

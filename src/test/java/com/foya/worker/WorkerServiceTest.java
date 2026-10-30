@@ -34,7 +34,7 @@ class WorkerServiceTest {
 
     @Test
     void incompleteCacheRefusesToProducePartialReport() throws Exception {
-        try (WorkerService service = new WorkerService(directory)) {
+        try (WorkerService service = TestWorkers.create(directory)) {
             service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 2)));
             cacheDay(service.configs.snapshot(), END_DATE);
             IOException error = assertThrows(IOException.class, () -> service.reportResponse(END_DATE));
@@ -46,7 +46,7 @@ class WorkerServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void mappingUpdatesReuseRawCacheAndResponseSharesArePercentValues() throws Exception {
-        try (WorkerService service = new WorkerService(directory)) {
+        try (WorkerService service = TestWorkers.create(directory)) {
             service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1, "amountsEnabled", true, "taskTypePrices", Map.of("workflow_a", new BigDecimal("25.00"), "workflow_b", new BigDecimal("25.25")))));
             cacheDay(service.configs.snapshot(), END_DATE);
             Path cache = directory.resolve("cache").resolve(END_DATE + ".json");
@@ -76,7 +76,7 @@ class WorkerServiceTest {
 
     @Test
     void manualSendWithoutTelegramTargetFailsBeforeSchedulingAnyDelivery() throws Exception {
-        try (WorkerService service = new WorkerService(directory)) {
+        try (WorkerService service = TestWorkers.create(directory)) {
             service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1)));
             cacheDay(service.configs.snapshot(), END_DATE);
             assertThrows(IllegalArgumentException.class, () -> service.send(END_DATE));
@@ -87,7 +87,7 @@ class WorkerServiceTest {
 
     @Test
     void dataSourceChangeInvalidatesCacheEvenWhenDateMatches() throws Exception {
-        try (WorkerService service = new WorkerService(directory)) {
+        try (WorkerService service = TestWorkers.create(directory)) {
             service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1)));
             cacheDay(service.configs.snapshot(), END_DATE);
             assertNotNull(service.reportResponse(END_DATE));

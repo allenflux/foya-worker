@@ -82,7 +82,7 @@ class P0RetryTest {
     @Test void final503FailureNeverWritesPartialDailyCache() throws Exception {
         serve(attempt -> new Reply(503, "sensitive failed upstream", null));
         config.p0MaxAttempts = 2;
-        Exception failure = assertThrows(Exception.class, () -> new StatsService(dir, new P0Client(delays::add))
+        Exception failure = assertThrows(Exception.class, () -> new StatsService(new LocalTestDailyCacheStore(dir), new P0Client(delays::add))
                 .pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(failure.getMessage().contains("已尝试 2 次"));
         assertFalse(failure.getMessage().contains("sensitive"));

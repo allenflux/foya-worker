@@ -54,7 +54,7 @@ class P0StatisticsTest {
                     + row(start + "b", "alpha", "2", "0.20", start) + ","
                     + row(end + "a", "alpha", "1", "0.10", end) + "]}}";
         });
-        StatsService stats = new StatsService(dir);
+        StatsService stats = new StatsService(new LocalTestDailyCacheStore(dir));
         List<StatsService.Progress> progress = Collections.synchronizedList(new ArrayList<>());
         DailyStats result = stats.pullDay(config, LocalDate.of(2024, 1, 2), false, progress::add);
         assertEquals(48, result.totalCount);
@@ -79,7 +79,7 @@ class P0StatisticsTest {
             String page = q.get("page");
             return "{\"data\":{\"total\":2,\"items\":[" + row(start + page, "h", "w", "1.001", start) + "]}}";
         });
-        DailyStats result = new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
+        DailyStats result = new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
         assertEquals(48, result.totalCount);
         assertEquals(48, requests.get());
         assertEquals(new BigDecimal("48.048"), result.totalFee);
@@ -87,7 +87,7 @@ class P0StatisticsTest {
 
     @Test void rejectsUnknownAndBusinessErrorResponsesWithoutWritingCache() throws Exception {
         serve(q -> "{\"code\":401,\"data\":{\"list\":[]}}");
-        assertThrows(Exception.class, () -> new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
+        assertThrows(Exception.class, () -> new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertFalse(Files.exists(dir.resolve("cache/2024-01-02.json")));
         assertThrows(Exception.class, () -> P0Client.decode(Json.MAPPER.readTree("{\"data\":{}}"), ZoneId.of("UTC")));
         assertThrows(Exception.class, () -> P0Client.decode(Json.MAPPER.readTree("{\"data\":[{\"hash_key\":\"a\",\"task_type\":1}]}"), ZoneId.of("UTC")));
@@ -96,7 +96,7 @@ class P0StatisticsTest {
     @Test void rejectsRepeatedPagesInsteadOfInflatingCounts() throws Exception {
         serve(q -> "{\"data\":{\"total\":2,\"list\":[" + row(q.get("start_time"), "h", "w", "1", q.get("start_time")) + "]}}");
         Exception error = assertThrows(Exception.class,
-                () -> new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
+                () -> new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(error.getMessage().contains("重复页面"));
         assertFalse(Files.exists(dir.resolve("cache/2024-01-02.json")));
     }
@@ -104,7 +104,7 @@ class P0StatisticsTest {
     @Test void failedForcedRefreshPreservesPreviousCompleteCache() throws Exception {
         AtomicBoolean fail = new AtomicBoolean();
         serve(q -> fail.get() ? "{\"success\":false}" : "{\"data\":{\"total\":0,\"list\":[]}}");
-        StatsService stats = new StatsService(dir);
+        StatsService stats = new StatsService(new LocalTestDailyCacheStore(dir));
         LocalDate date = LocalDate.of(2024, 1, 2);
         DailyStats good = stats.pullDay(config, date, false, null);
         byte[] original = Files.readAllBytes(dir.resolve("cache/2024-01-02.json"));
@@ -116,7 +116,7 @@ class P0StatisticsTest {
 
     @Test void unknownPageSizeWithoutTotalContinuesUntilEmpty() throws Exception {
         serve(q -> "1".equals(q.get("page")) ? "{\"data\":[" + row(q.get("start_time"), "h", "w", "1", q.get("start_time")) + "]}" : "{\"data\":[]}");
-        DailyStats result = new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
+        DailyStats result = new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
         assertEquals(24, result.totalCount);
         assertEquals(48, requests.get());
     }
@@ -124,7 +124,7 @@ class P0StatisticsTest {
     @Test void rejectsTotalHasMoreConflicts() throws Exception {
         serve(q -> "{\"data\":{\"total\":1,\"has_more\":true,\"list\":[" + row(q.get("start_time"), "h", "w", "1", q.get("start_time")) + "]}}");
         Exception error = assertThrows(Exception.class,
-                () -> new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
+                () -> new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(error.getMessage().contains("冲突"));
         assertFalse(Files.exists(dir.resolve("cache/2024-01-02.json")));
         assertThrows(Exception.class, () -> P0Client.decode(Json.MAPPER.readTree("{\"total\":2,\"data\":{\"total\":1,\"list\":[]}}"), ZoneId.of("UTC")));
@@ -135,7 +135,7 @@ class P0StatisticsTest {
         serve(q -> "{\"data\":{" + ("1".equals(q.get("page")) ? "\"total\":3,\"has_more\":true," : "\"has_more\":false,")
                 + "\"list\":[" + row(q.get("start_time") + q.get("page"), "h", "w", "1", q.get("start_time")) + "]}}");
         Exception error = assertThrows(Exception.class,
-                () -> new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
+                () -> new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(error.getMessage().contains("total 不一致"));
     }
 
@@ -143,7 +143,7 @@ class P0StatisticsTest {
         AtomicBoolean repeated = new AtomicBoolean();
         serve(q -> "{\"data\":{\"total\":" + (repeated.get() ? "3" : ("1".equals(q.get("page")) ? "2" : "3"))
                 + ",\"records\":[{\"hash_key\":\"h\",\"task_type\":\"w\",\"fee\":1,\"created_time\":\"" + q.get("start_time") + "\"}]}}");
-        StatsService stats = new StatsService(dir);
+        StatsService stats = new StatsService(new LocalTestDailyCacheStore(dir));
         Exception changed = assertThrows(Exception.class, () -> stats.pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(changed.getMessage().contains("total 在拉取过程中变化"));
         repeated.set(true);
@@ -155,7 +155,7 @@ class P0StatisticsTest {
         serve(q -> "{\"data\":{\"pagination\":{\"total\":2,\"hasMore\":false},\"rows\":["
                 + "{\"hashKey\":\"a\",\"task\":{\"type\":17},\"fee\":\"0.01\",\"created_time\":\"" + q.get("start_time") + "\"},"
                 + "{\"hash_key\":\"b\",\"task\":\"workflow-label\",\"fee\":\"0.02\",\"createdTime\":\"" + q.get("start_time") + "\"}]}}");
-        DailyStats stats = new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
+        DailyStats stats = new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
         assertEquals(48, stats.totalCount);
         assertEquals(new BigDecimal("0.72"), stats.totalFee);
         assertEquals(Set.of("17", "workflow-label"), new HashSet<>(stats.buckets.stream().map(DailyStats.Bucket::taskType).toList()));
@@ -174,7 +174,7 @@ class P0StatisticsTest {
         assertEquals(true, probe.get("ok"));
         assertTrue(probe.get("message").toString().contains("缺少创建时间"));
         Exception error = assertThrows(Exception.class,
-                () -> new StatsService(dir).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
+                () -> new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 1, 2), false, null));
         assertTrue(error.getMessage().contains("缺少创建时间"));
         assertFalse(Files.exists(dir.resolve("cache/2024-01-02.json")));
     }
@@ -185,7 +185,7 @@ class P0StatisticsTest {
         Path secret = dir.resolve("existing.env");
         Files.writeString(secret, "export P0_API_KEY='existing-secret'\n");
         config.p0ApiKeyFile = secret.toString();
-        DailyStats day = new StatsService(dir).pullDay(config, LocalDate.of(2024, 3, 10), false, null);
+        DailyStats day = new StatsService(new LocalTestDailyCacheStore(dir)).pullDay(config, LocalDate.of(2024, 3, 10), false, null);
         assertEquals(23, day.requestCount);
         assertFalse(Files.readString(dir.resolve("cache/2024-03-10.json")).contains("existing-secret"));
         assertEquals("existing-secret", P0Client.resolveApiKey(config));

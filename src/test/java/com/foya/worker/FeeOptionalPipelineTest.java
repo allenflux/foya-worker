@@ -130,7 +130,7 @@ class FeeOptionalPipelineTest {
         fixture.start();
         URI fixtureBase = URI.create("http://127.0.0.1:" + fixture.getAddress().getPort());
         try (HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-             WorkerService worker = new WorkerService(directory, new TelegramClient(fixtureBase));
+             WorkerService worker = TestWorkers.create(directory, new TelegramClient(fixtureBase));
              WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
             web.start();
             String base = "http://127.0.0.1:" + web.port();

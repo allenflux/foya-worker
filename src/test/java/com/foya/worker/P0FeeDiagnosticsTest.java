@@ -130,7 +130,7 @@ class P0FeeDiagnosticsTest {
         server.start();
         try {
             AppConfig config = new AppConfig(); config.p0Endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/api/tasks/list";
-            DailyStats stats = new StatsService(directory).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
+            DailyStats stats = new StatsService(new LocalTestDailyCacheStore(directory)).pullDay(config, LocalDate.of(2024, 1, 2), false, null);
             assertEquals(72, stats.totalCount);
             assertEquals(0, new BigDecimal("7.200000000000000000000072").compareTo(stats.totalFee));
         } finally { server.stop(0); }

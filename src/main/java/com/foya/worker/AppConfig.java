@@ -16,6 +16,7 @@ public class AppConfig {
     public String p0ApiKeyFile = "";
     public String p0TimeFormat = "datetime";
     public int p0MaxAttempts = 50;
+    public String cacheUploadUrl = "http://allenflux.tech:8090/upload";
     public String timezone = "Asia/Shanghai";
     public String telegramBotToken = "";
     public String telegramChatId = "";
@@ -45,6 +46,12 @@ public class AppConfig {
                 throw new IllegalArgumentException();
             }
         } catch (Exception e) { throw new IllegalArgumentException("p0 接口必须是 HTTPS 地址（本机测试可用 HTTP），不含查询参数或账号。"); }
+        try {
+            URI uri = URI.create(cacheUploadUrl);
+            if (uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
+                    || !Set.of("http", "https").contains(uri.getScheme()) || !uri.getPath().replaceAll("/+$", "").endsWith("/upload"))
+                throw new IllegalArgumentException();
+        } catch (Exception e) { throw new IllegalArgumentException("远程缓存上传地址必须是以 /upload 结尾的 HTTP 或 HTTPS 地址，不含账号、查询参数或片段。"); }
         try { ZoneId.of(timezone); } catch (Exception e) { throw new IllegalArgumentException("统计时区无效。"); }
         try { LocalTime.parse(sendTime); if (!sendTime.matches("\\d{2}:\\d{2}")) throw new IllegalArgumentException(); }
         catch (Exception e) { throw new IllegalArgumentException("发送时间格式应为 HH:mm。"); }

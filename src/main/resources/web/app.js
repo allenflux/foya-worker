@@ -195,7 +195,7 @@ function updateSubscriptionCounts() {
 function renderConfig(config) {
   state.config = config;
   const form = $('#config-form');
-  for(const name of ['p0Endpoint','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','reportDays','p0MaxAttempts','llmBaseUrl','llmModel','llmTimeoutSeconds']) {
+  for(const name of ['p0Endpoint','cacheUploadUrl','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','reportDays','p0MaxAttempts','llmBaseUrl','llmModel','llmTimeoutSeconds']) {
     if (config[name] != null && form.elements[name]) form.elements[name].value = config[name];
   }
   form.elements.scheduleEnabled.checked = Boolean(config.scheduleEnabled);
@@ -267,7 +267,7 @@ function renderReport(report) {
   $('#metric-total').textContent = number(report?.totalCount);
   $('#metric-count-note').textContent = report ? `${displayDate(report.endDate)} · 成功任务` : '等待拉取数据';
   $('#data-period').textContent = report ? `${displayDate(report.startDate)} — ${displayDate(report.endDate)}` : '—';
-  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${money(amountsPaused ? null : day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">已缓存</span></td></tr>`).join('');
+  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${money(amountsPaused ? null : day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">远程缓存</span></td></tr>`).join('');
   $('#channel-rows').innerHTML = (report?.channels || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end">${money(amountsPaused ? null : row.fee)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   $('#workflow-rows').innerHTML = (report?.workflows || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   renderAiPreview();
@@ -298,7 +298,7 @@ async function loadReport({silent=false}={}) {
   const endDate = $('#end-date').value;
   if (!endDate) return;
   try {renderReport(await api(`/api/report?endDate=${encodeURIComponent(endDate)}`));}
-  catch(error) {if (error.status === 409) {renderReport(null);if(!silent) toast('所选日期还没有完整缓存，请点击「刷新统计」。');} else {showPersistentError(error,'读取报表');if(!silent) toast(redactDiagnostic(error.message),true);}}
+  catch(error) {if (error.status === 409) {renderReport(null);if(!silent) toast('所选日期还没有完整远程缓存，请点击「刷新统计」。');} else {showPersistentError(error,'读取报表');if(!silent) toast(redactDiagnostic(error.message),true);}}
 }
 
 function formatTime(time) {
@@ -321,7 +321,7 @@ function renderStatus(status) {
   $('#cache-count').textContent = `${cacheDays.length} 天`;
   $('#last-sent').textContent = status.lastSentDate || '尚未发送';
   $('#next-run').textContent = status.nextRun ? formatTime(status.nextRun) : (state.config?.scheduleEnabled ? '等待下次计划' : '未启用');
-  $('#cache-dates').innerHTML = cacheDays.length ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('') : '<span class="small text-body-secondary">暂无缓存</span>';
+  $('#cache-dates').innerHTML = cacheDays.length ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('') : '<span class="small text-body-secondary">暂无远程缓存</span>';
   const logs = status.logs || [];
   $('#logs-empty').classList.toggle('hidden',logs.length > 0);
   $('#log-rows').innerHTML = [...logs].sort((a,b) => String(b.time || '').localeCompare(String(a.time || ''))).map((log) => {
@@ -358,7 +358,7 @@ async function refreshStatus() {
 function configPayload(includeBots=true) {
   const form = $('#config-form');
   const payload = {};
-  for(const name of ['p0Endpoint','p0ApiKey','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','llmBaseUrl','llmModel','llmApiKey']) payload[name] = form.elements[name].value.trim();
+  for(const name of ['p0Endpoint','cacheUploadUrl','p0ApiKey','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','llmBaseUrl','llmModel','llmApiKey']) payload[name] = form.elements[name].value.trim();
   payload.reportDays = Number(form.elements.reportDays.value);
   payload.p0MaxAttempts = Number(form.elements.p0MaxAttempts.value);
   if (!Number.isInteger(payload.p0MaxAttempts) || payload.p0MaxAttempts < 1 || payload.p0MaxAttempts > 50) throw new Error('每页最多尝试次数应为 1–50 之间的整数。');
