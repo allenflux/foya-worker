@@ -42,8 +42,10 @@ public final class P0Client {
                 .followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
-    public record Task(String id, String hashKey, String taskType, BigDecimal fee, Instant createdAt) {}
-    private record Page(List<Task> tasks, Long total, Boolean hasMore) {}
+    public record Task(String id, String hashKey, String taskType, BigDecimal fee, Instant createdAt, String feeWarning) {
+        public Task(String id, String hashKey, String taskType, BigDecimal fee, Instant createdAt) { this(id, hashKey, taskType, fee, createdAt, null); }
+    }
+    record Page(List<Task> tasks, Long total, Boolean hasMore) {}
 
     public void pullHour(AppConfig config, String apiKey, ZonedDateTime start, ZonedDateTime end,
                          Consumer<List<Task>> receive, Runnable requested) throws Exception {
@@ -93,7 +95,7 @@ public final class P0Client {
         for (Task task : tasks) {
             StringBuilder row = new StringBuilder();
             for (String value : List.of(task.id() == null ? "" : task.id(), task.hashKey(), task.taskType(),
-                    task.fee().stripTrailingZeros().toPlainString(), task.createdAt() == null ? "" : task.createdAt().toString()))
+                    task.fee() == null ? "<unknown-fee>" : task.fee().stripTrailingZeros().toPlainString(), task.createdAt() == null ? "" : task.createdAt().toString()))
                 row.append(value.length()).append(':').append(value);
             rows.add(row.toString());
         }
@@ -109,9 +111,12 @@ public final class P0Client {
     public Map<String, Object> testConnection(AppConfig config) throws Exception {
         ZonedDateTime start = LocalDate.now(ZoneId.of(config.timezone)).minusDays(1).atStartOfDay(ZoneId.of(config.timezone));
         Page page = request(config, resolveApiKey(config), start, start.plusHours(1), 1, 1, () -> {});
-        return Map.of("ok", true, "message", page.tasks().isEmpty() ? "p0 接口连通，查询时段暂无记录；任务字段需在有数据时进一步验证"
+        long missingFee = page.tasks().stream().filter(task -> task.fee() == null).count();
+        String message = page.tasks().isEmpty() ? "p0 接口连通，查询时段暂无记录；任务字段需在有数据时进一步验证"
                 : page.tasks().stream().anyMatch(task -> task.createdAt() == null) ? "p0 接口连通，但任务缺少创建时间，当前响应无法安全进行按日汇总"
-                : "p0 接口连通，任务数组及统计字段校验通过", "sampleCount", page.tasks().size());
+                : "p0 接口连通，任务数组及单数统计字段校验通过";
+        if (missingFee > 0) message += "；fee 金额未提供或无效，单数统计可继续，金额显示为未提供";
+        return Map.of("ok", true, "message", message, "sampleCount", page.tasks().size(), "missingFeeCount", missingFee);
     }
 
     private Page request(AppConfig config, String apiKey, ZonedDateTime start, ZonedDateTime end,
@@ -217,14 +222,21 @@ public final class P0Client {
         JsonNode data = root.isArray() ? root : root.get("data");
         if (data == null) data = root;
         JsonNode items = data.isArray() ? data : null;
+        String itemsPath = items == null ? null : data == root ? "$" : "data";
         if (items == null) for (String name : List.of("list", "tasks", "items", "records", "rows")) {
-            if (data.path(name).isArray()) { items = data.path(name); break; }
+            if (data.path(name).isArray()) {
+                items = data.path(name);
+                itemsPath = data == root ? name : "data." + name;
+                break;
+            }
         }
         if (items == null) throw new IOException("找不到任务数组（支持 data.list/tasks/items/records/rows 或 data 数组）");
         Long total = longMeta(data, root, "total", "total_count", "totalCount");
         Boolean more = boolMeta(data, root, "has_more", "hasMore");
         List<Task> tasks = new ArrayList<>();
+        int rowIndex = 0;
         for (JsonNode row : items) {
+            rowIndex++;
             if (!row.isObject()) throw new IOException("任务记录必须为对象");
             if (row.hasNonNull("status") && !"2".equals(row.path("status").asText()))
                 throw new IOException("status=2 查询中出现非成功任务，请确认接口筛选语义");
@@ -232,20 +244,49 @@ public final class P0Client {
             String type = workflow(row);
             if (type.isBlank()) throw new IOException("任务 task_type 不能为空");
             JsonNode feeValue = row.get("fee");
-            if (feeValue == null || feeValue.isNull() || !(feeValue.isNumber() || feeValue.isTextual()))
-                throw new IOException("任务缺少有效 fee");
-            BigDecimal fee;
-            try { fee = new BigDecimal(feeValue.asText()); }
-            catch (NumberFormatException e) { throw new IOException("任务 fee 不是有效数值"); }
+            BigDecimal fee = null;
+            String feeWarning = null;
+            if (feeValue == null) feeWarning = feeDiagnostic(itemsPath, rowIndex, row, "缺失").getMessage();
+            else if (feeValue.isNull()) feeWarning = feeDiagnostic(itemsPath, rowIndex, row, "null").getMessage();
+            else if (!(feeValue.isNumber() || feeValue.isTextual())) {
+                String typeName = feeValue.isObject() ? "对象" : feeValue.isArray() ? "数组" : feeValue.isBoolean() ? "布尔值" : "其他类型";
+                feeWarning = feeDiagnostic(itemsPath, rowIndex, row, "类型不对（" + typeName + "）").getMessage();
+            } else {
+                try { fee = new BigDecimal(feeValue.asText().trim()); }
+                catch (NumberFormatException e) {
+                    feeWarning = feeDiagnostic(itemsPath, rowIndex, row, feeValue.isTextual() ? "非数字字符串" : "非有效数值").getMessage();
+                }
+            }
             String id = firstText(row, "id", "task_id", "taskId", "uuid");
             Instant createdAt = null;
             String rawTime = firstText(row, "create_time", "created_at", "created_time", "createdAt", "createTime", "createdTime", "created_on", "createdOn");
             if (rawTime != null) createdAt = parseTime(rawTime, zone);
             if (id == null && createdAt == null)
                 throw new IOException("任务缺少 id/task_id 或创建时间，无法校验小时边界和重复记录");
-            tasks.add(new Task(id, hash, type, fee, createdAt));
+            tasks.add(new Task(id, hash, type, fee, createdAt, feeWarning));
         }
         return new Page(tasks, total, more);
+    }
+
+    private static final Set<String> DIAGNOSTIC_FIELDS = Set.of("fee", "hash_key", "hashKey", "task_type", "taskType", "type", "task",
+            "id", "task_id", "taskId", "uuid", "created_at", "create_time", "created_time", "createdAt", "createTime", "createdTime",
+            "created_on", "createdOn", "status", "amount", "cost", "price", "total_fee", "task_fee", "billing", "payment", "meta", "metadata", "data", "result", "extra", "params");
+
+    private static IOException feeDiagnostic(String itemsPath, int index, JsonNode row, String reason) {
+        List<String> safeFields = new ArrayList<>();
+        var fields = row.fieldNames();
+        boolean omitted = false;
+        while (fields.hasNext()) {
+            String field = fields.next();
+            // A structural allowlist also excludes secrets stored as dynamic JSON property names.
+            String normalized = field.toLowerCase(Locale.ROOT);
+            if (!DIAGNOSTIC_FIELDS.contains(field) || !field.matches("[A-Za-z_][A-Za-z0-9_]{0,39}")
+                    || normalized.matches(".*(apikey|token|authorization|password|secret).*")) continue;
+            if (safeFields.size() < 20) safeFields.add(field); else omitted = true;
+        }
+        return new IOException("任务缺少有效 fee：数组 " + itemsPath + "，第 " + index + " 条；fee 状态：" + reason
+                + "；可识别字段：" + (safeFields.isEmpty() ? "无" : String.join(", ", safeFields)) + (omitted ? "（更多字段已省略）" : "")
+                + "。仅列字段名，未包含字段值。");
     }
 
     private static String required(JsonNode row, String... fields) throws IOException {

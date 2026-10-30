@@ -47,7 +47,7 @@ class WorkerServiceTest {
     @SuppressWarnings("unchecked")
     void mappingUpdatesReuseRawCacheAndResponseSharesArePercentValues() throws Exception {
         try (WorkerService service = new WorkerService(directory)) {
-            service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1)));
+            service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1, "amountsEnabled", true)));
             cacheDay(service.configs.snapshot(), END_DATE);
             Path cache = directory.resolve("cache").resolve(END_DATE + ".json");
             byte[] before = Files.readAllBytes(cache);

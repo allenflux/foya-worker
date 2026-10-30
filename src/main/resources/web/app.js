@@ -1,12 +1,13 @@
 'use strict';
 
 const $ = (selector) => document.querySelector(selector);
-const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, toastTimer:null, busy: new Set()};
+const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
 const viewNames = {overview:'统计概览',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value) => value == null ? '—' : numberFormat.format(Number(value));
+const money = (value) => value == null ? '未统计' : number(value);
 const displayDate = (date) => typeof date === 'string' ? date.slice(5).replace('-', '/') : '—';
 const icon = (name, className='') => `<svg class="${className}"><use href="#i-${name}"/></svg>`;
 const showModal = (selector) => bootstrap.Modal.getOrCreateInstance($(selector)).show();
@@ -14,20 +15,86 @@ const hideModal = (selector) => bootstrap.Modal.getInstance($(selector))?.hide()
 
 function toast(message, error=false) {
   clearTimeout(state.toastTimer);
-  $('#toast').textContent = message;
+  $('#toast').textContent = redactDiagnostic(message);
   $('#toast').classList.toggle('alert-danger',error);
   $('#toast').classList.toggle('alert-dark',!error);
   $('#toast').classList.remove('hidden');
   state.toastTimer = setTimeout(() => $('#toast').classList.add('hidden'), error ? 7000 : 4500);
 }
 
+function redactDiagnostic(value) {
+  let text = String(value ?? '');
+  for (const input of document.querySelectorAll('input[type="password"]')) {
+    if (input.value && input.value.length >= 4) text = text.split(input.value).join('[已隐藏]');
+  }
+  return text.replace(/\bBearer\s+[^\s,;]+/gi,'Bearer [已隐藏]')
+    .replace(/\b\d{5,}:[A-Za-z0-9_-]{15,}\b/g,'[已隐藏]')
+    .replace(/\b(?:sk|sess|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}\b/gi,'[已隐藏]')
+    .replace(/((?:api[-_]?key|token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?)[^"',;\s&]+/gi,'$1[已隐藏]')
+    .slice(0,8000);
+}
+
+function diagnosticPath(value) {
+  try {return redactDiagnostic(new URL(String(value || location.pathname),location.origin).pathname);} catch {return '/';}
+}
+
+function diagnosticError(message,path,options={},status=null,details=null) {
+  const error = new Error(redactDiagnostic(message));
+  error.status = status;
+  error.diagnostics = details && typeof details === 'object' ? details : {time:new Date().toISOString(),method:options.method || 'GET',path:diagnosticPath(path),status,message:error.message};
+  return error;
+}
+
+function showPersistentError(error,context='页面操作') {
+  if (error?.persistentShown) return;
+  const details = error?.diagnostics && typeof error.diagnostics === 'object' ? error.diagnostics : {};
+  const method = String(details.method || 'LOCAL').toUpperCase();
+  const parsedTime = new Date(details.time || Date.now());
+  const diagnostics = {
+    time:Number.isNaN(parsedTime.getTime()) ? new Date().toISOString() : parsedTime.toISOString(),
+    method:['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','LOCAL','JOB','BROWSER'].includes(method) ? method : 'LOCAL',
+    path:diagnosticPath(details.path),
+    status:Number.isInteger(details.status) && details.status >= 100 && details.status <= 599 ? details.status : null,
+    step:redactDiagnostic(details.step || context),
+    message:redactDiagnostic(details.message || error?.message || '操作失败，请复制错误详情反馈。')
+  };
+  if (details.requestId) diagnostics.requestId = redactDiagnostic(details.requestId).slice(0,128);
+  if (details.jobId) diagnostics.jobId = redactDiagnostic(details.jobId).slice(0,128);
+  const signature = JSON.stringify([diagnostics.method,diagnostics.path,diagnostics.status,diagnostics.step,diagnostics.message]);
+  if (error && typeof error === 'object') error.persistentShown = true;
+  if (context === '状态刷新' && state.persistentError?.signature === signature) return;
+  const text = JSON.stringify(diagnostics,null,2);
+  state.persistentError = {signature,text};
+  $('#error-message').textContent = `${diagnostics.step}：${diagnostics.message}`;
+  $('#error-details').textContent = text;
+  $('#error-panel').classList.remove('hidden');
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {await navigator.clipboard.writeText(text);return;} catch { /* HTTP and denied clipboard access use the fallback below. */ }
+  }
+  const previousFocus = document.activeElement;
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.className = 'visually-hidden position-fixed';
+  input.setAttribute('readonly','');
+  document.body.append(input);
+  try {
+    input.focus();input.select();input.setSelectionRange(0,input.value.length);
+    if (!document.execCommand('copy')) throw new Error('无法自动复制，请展开详情后手动复制。');
+  } finally {input.remove();previousFocus?.focus?.();}
+}
+
 async function api(path, options={}) {
   const headers = {'X-Requested-With':'foya-admin',...(options.body ? {'Content-Type':'application/json'}:{}),...options.headers};
   let response;
-  try {response = await fetch(path,{...options,headers,cache:'no-store'});} catch {throw new Error('无法连接后台服务，请检查服务是否运行。');}
+  try {response = await fetch(path,{...options,headers,cache:'no-store'});}
+  catch {throw diagnosticError('无法连接后台服务，请检查服务是否运行。',path,options);}
   let data;
-  try {data = await response.json();} catch {throw new Error('后台返回格式异常，请查看运行记录。');}
-  if (!response.ok) {const error = new Error(data.error || data.message || `请求失败（${response.status}）`);error.status=response.status;throw error;}
+  try {data = await response.json();}
+  catch {throw diagnosticError('后台返回格式异常，请复制错误详情反馈。',path,options,response.status);}
+  if (!response.ok) throw diagnosticError(data.error || data.message || `请求失败（${response.status}）`,path,options,response.status,data.errorDetails);
   return data;
 }
 
@@ -35,9 +102,10 @@ async function withButton(selector, fn, loadingText) {
   const button = $(selector);
   if (state.busy.has(selector)) return;
   const original = button.innerHTML;
+  const context = button.textContent.trim() || '页面操作';
   state.busy.add(selector);button.disabled = true;
   if (loadingText) button.innerHTML = `${icon('refresh','spinning')}${loadingText}`;
-  try {return await fn();} catch(error) {toast(error.message,true);} finally {state.busy.delete(selector);button.innerHTML = original;button.disabled=false;updateActions();}
+  try {return await fn();} catch(error) {handleError(error,context);} finally {state.busy.delete(selector);button.innerHTML = original;button.disabled=false;updateActions();}
 }
 
 function yesterday(timezone='Asia/Shanghai') {
@@ -57,7 +125,7 @@ function setView() {
   if (target === 'logs') refreshStatus().catch(handleError);
 }
 
-function handleError(error) {toast(error.message,true);}
+function handleError(error,context='页面操作') {showPersistentError(error,context);toast(redactDiagnostic(error.message),true);}
 function setConnected(ok) {
   $('#connection-dot').className = `connection-dot ${ok ? 'ok' : 'error'}`;
   $('#connection-text').textContent = ok ? '后台服务已连接' : '后台连接中断';
@@ -185,13 +253,21 @@ function renderReport(report) {
   $('#daily-empty').classList.toggle('hidden',hasData);
   $('#channel-empty').classList.toggle('hidden',Boolean(report?.channels?.length));
   $('#workflow-empty').classList.toggle('hidden',Boolean(report?.workflows?.length));
+  const amountsPaused = report?.amountsEnabled !== true;
   $('#metric-count').textContent = number(report?.latestCount);
-  $('#metric-fee').textContent = number(report?.latestFee);
+  $('#metric-fee').textContent = money(amountsPaused ? null : report?.latestFee);
+  $('#metric-fee-note').textContent = amountsPaused ? '金额暂未统计' : (report.latestFeeComplete === false || report.latestFee == null ? '部分金额未统计，单数统计正常' : '金额汇总');
+  const byCount = amountsPaused || report?.channelsBy === 'count';
+  $('#channel-sort-note').textContent = `最新统计日 · 按${byCount ? '单数' : '金额'}降序`;
+  $('#channel-share-heading').textContent = `${byCount ? '单数' : '金额'}占比`;
+  const incompleteFees = Boolean(report && (report.feeComplete === false || Number(report.missingFeeCount) > 0));
+  $('#fee-notice').classList.toggle('hidden',!amountsPaused && !incompleteFees);
+  $('#fee-notice').textContent = amountsPaused ? '金额暂未统计，渠道按单数排名' : (incompleteFees ? `${Number(report.missingFeeCount) > 0 ? `有 ${number(report.missingFeeCount)} 单` : '部分任务'}金额未统计，单数统计正常。${byCount ? '渠道按单数排名。' : ''}` : '');
   $('#metric-total').textContent = number(report?.totalCount);
   $('#metric-count-note').textContent = report ? `${displayDate(report.endDate)} · 成功任务` : '等待拉取数据';
   $('#data-period').textContent = report ? `${displayDate(report.startDate)} — ${displayDate(report.endDate)}` : '—';
-  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${number(day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">已缓存</span></td></tr>`).join('');
-  $('#channel-rows').innerHTML = (report?.channels || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end">${number(row.fee)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
+  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${money(amountsPaused ? null : day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">已缓存</span></td></tr>`).join('');
+  $('#channel-rows').innerHTML = (report?.channels || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end">${money(amountsPaused ? null : row.fee)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   $('#workflow-rows').innerHTML = (report?.workflows || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   renderAiPreview();
   $('#preview-clock').textContent = report ? new Intl.DateTimeFormat('zh-CN',{timeZone:state.config?.timezone || 'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()) : '预览';
@@ -212,7 +288,7 @@ function renderAiPreview() {
   };
   $('#summary-status').textContent = labels[status] || labels.failed;
   $('#summary-notice').className = `alert ${status === 'ok' ? 'alert-success' : status === 'failed' ? 'alert-warning' : status === 'pending' ? 'alert-primary' : 'alert-light'} border-0 border-bottom rounded-0 m-0 py-2 px-3 small`;
-  $('#summary-notice').title = summary?.aiMessage || '';
+  $('#summary-notice').title = redactDiagnostic(summary?.aiMessage || '');
   $('#summary-dot').className = `tiny-dot me-1 ${status === 'ok' ? 'teal' : status === 'pending' ? 'blue' : ''}`;
   $('#report-preview').textContent = summary?.text || state.report?.text || '等待生成报表\n\n完成数据源配置并刷新统计后，\n这里会显示实际发送内容。\n\n每日统计 · 渠道 TOP10 · 工作流 TOP10';
 }
@@ -221,7 +297,7 @@ async function loadReport({silent=false}={}) {
   const endDate = $('#end-date').value;
   if (!endDate) return;
   try {renderReport(await api(`/api/report?endDate=${encodeURIComponent(endDate)}`));}
-  catch(error) {if (error.status === 409 || error.status === 404) {renderReport(null);if(!silent) toast('所选日期还没有完整缓存，请点击「刷新统计」。');} else if(!silent) handleError(error);}
+  catch(error) {if (error.status === 409) {renderReport(null);if(!silent) toast('所选日期还没有完整缓存，请点击「刷新统计」。');} else {showPersistentError(error,'读取报表');if(!silent) toast(redactDiagnostic(error.message),true);}}
 }
 
 function formatTime(time) {
@@ -258,13 +334,24 @@ function renderStatus(status) {
     if (status.job.state === 'failed' || status.job.error) toast(status.job.error || status.job.message || '执行失败，请查看记录。',true);
     else {toast(status.job.message || '任务已完成。');loadReport({silent:true});}
   }
+  if (status.job && (status.job.state === 'failed' || status.job.error)) {
+    const job = status.job;
+    const key = job.id || job.errorDetails?.jobId || `${job.startedAt || ''}:${job.kind || ''}:${job.error || job.message || ''}`;
+    if (!state.failedJobIds.has(key)) {
+      state.failedJobIds.add(key);
+      if (state.failedJobIds.size > 100) state.failedJobIds.delete(state.failedJobIds.values().next().value);
+      const error = new Error(job.error || job.message || '任务执行失败。');
+      error.diagnostics = {method:'JOB',path:'/api/status',time:job.finishedAt,step:job.kind,message:error.message,...job.errorDetails};
+      showPersistentError(error,job.kind || '后台任务');
+    }
+  }
   updateActions();
 }
 
 async function refreshStatus() {
   if (state.refreshing) return;
   state.refreshing = true;
-  try {renderStatus(await api('/api/status'));setConnected(true);} catch(error) {setConnected(false);throw error;} finally {state.refreshing=false;}
+  try {renderStatus(await api('/api/status'));setConnected(true);} catch(error) {setConnected(false);showPersistentError(error,'状态刷新');throw error;} finally {state.refreshing=false;}
 }
 
 function configPayload(includeBots=true) {
@@ -346,7 +433,7 @@ $('#pull-button').addEventListener('click',() => withButton('#pull-button',async
 },'提交任务'));
 $('#end-date').addEventListener('change',() => loadReport());
 $('#test-p0').addEventListener('click',() => withButton('#test-p0',async () => {const result=await api('/api/test/p0',{method:'POST',body:JSON.stringify(configPayload(false))});toast(result.message || 'P0 接口连接正常。');},'正在测试'));
-$('#test-llm').addEventListener('click',() => withButton('#test-llm',async () => {const result=await api('/api/test/llm',{method:'POST',body:JSON.stringify(configPayload(false))});toast(result.message || 'AI 模型服务连接正常。',result.status === 'failed');},'正在测试'));
+$('#test-llm').addEventListener('click',() => withButton('#test-llm',async () => {const result=await api('/api/test/llm',{method:'POST',body:JSON.stringify(configPayload(false))});if(result.status === 'failed') showPersistentError(diagnosticError(result.message || 'AI 模型连接失败。','/api/test/llm',{method:'POST'},null,result.errorDetails),'LLM 连接测试');toast(redactDiagnostic(result.message || 'AI 模型服务连接正常。'),result.status === 'failed');},'正在测试'));
 $('#summary-button').addEventListener('click',() => withButton('#summary-button',async () => {
   if (!state.report) return;
   const report = state.report;
@@ -358,6 +445,7 @@ $('#summary-button').addEventListener('click',() => withButton('#summary-button'
     if (state.config !== configReference || state.report?.endDate !== report.endDate || state.report?.text !== report.text) return;
     state.summary = {...result,endDate:report.endDate,rawText:report.text,text:result.aiStatus === 'ok' ? (result.text || report.text) : report.text};
     renderAiPreview();
+    if (result.aiStatus === 'failed') showPersistentError(diagnosticError(result.aiMessage || 'AI 总结暂不可用，已保留原始日报。','/api/summary',{method:'POST'},null,result.errorDetails),'AI 总结');
     toast(result.aiStatus === 'ok' ? 'AI 总结已加入预览。' : (result.aiMessage || (result.aiStatus === 'disabled' ? 'AI 总结尚未启用，已保留原始日报。' : 'AI 总结暂不可用，原始日报仍可正常发送。')));
   } catch(error) {
     if (state.config === configReference && state.report?.endDate === report.endDate && state.report?.text === report.text) {
@@ -386,7 +474,7 @@ $('#confirm-send').addEventListener('click',() => withButton('#confirm-send',asy
   await api('/api/send',{method:'POST',body:JSON.stringify({endDate:state.report.endDate,...($('#send-target').value ? {botId:$('#send-target').value} : {})})});
   hideModal('#send-dialog');state.startedJob=true;toast('发送任务已提交。');await refreshStatus();
 },'正在提交'));
-$('#copy-button').addEventListener('click',() => withButton('#copy-button',async () => {await navigator.clipboard.writeText(state.summary?.text || state.report?.text || '');toast('报表已复制。');}));
+$('#copy-button').addEventListener('click',() => withButton('#copy-button',async () => {await copyText(state.summary?.text || state.report?.text || '');toast('报表已复制。');}));
 $('#refresh-status').addEventListener('click',() => withButton('#refresh-status',async () => {await refreshStatus();toast('记录已更新。');},'正在刷新'));
 $('#export-config').addEventListener('click',() => {
   if (!state.config) return;
@@ -395,14 +483,32 @@ $('#export-config').addEventListener('click',() => {
   downloadJson('aiapi-config.json',safe);toast('已导出配置，不包含 P0、Telegram 或模型密钥。');
 });
 $('#export-mappings').addEventListener('click',() => {
-  try {downloadJson('aiapi-mappings.json',{channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射')});} catch(error){toast(error.message,true);}
+  try {downloadJson('aiapi-mappings.json',{channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射')});} catch(error){handleError(error,'导出名称映射');}
 });
 for(const [inputId,textareaId,label,key] of [['import-channels','channel-map','渠道映射','channelNames'],['import-workflows','workflow-map','工作流映射','workflowNames']]) {
   $(`#${inputId}`).addEventListener('change',async(event) => {
     const file=event.target.files[0];if(!file) return;
-    try {if(file.size>2*1024*1024) throw new Error('映射文件不能超过 2 MB。');const raw=JSON.parse(await file.text());const data=raw[key] || raw;const parsed=parseMap(JSON.stringify(data),label);$(`#${textareaId}`).value=JSON.stringify(parsed,null,2);toast(`已导入 ${Object.keys(parsed).length} 个名称，请保存映射。`);} catch(error){toast(error instanceof SyntaxError ? '文件不是有效的 JSON。' : error.message,true);} finally{event.target.value='';}
+    try {if(file.size>2*1024*1024) throw new Error('映射文件不能超过 2 MB。');const raw=JSON.parse(await file.text());const data=raw[key] || raw;const parsed=parseMap(JSON.stringify(data),label);$(`#${textareaId}`).value=JSON.stringify(parsed,null,2);toast(`已导入 ${Object.keys(parsed).length} 个名称，请保存映射。`);} catch(error){handleError(error instanceof SyntaxError ? new Error('文件不是有效的 JSON。') : error,'导入名称映射');} finally{event.target.value='';}
   });
 }
+$('#copy-error').addEventListener('click',async () => {
+  if (!state.persistentError) return;
+  try {await copyText(state.persistentError.text);toast('脱敏错误详情已复制，可直接粘贴反馈。');}
+  catch {toast('无法自动复制，请展开详情后手动复制。',true);}
+});
+$('#clear-error').addEventListener('click',() => {
+  state.persistentError = null;
+  $('#error-panel').classList.add('hidden');
+  $('#error-message').textContent = '';$('#error-details').textContent = '';
+});
+window.addEventListener('error',() => {
+  const error = diagnosticError('页面脚本发生错误，请复制详情反馈。',location.pathname,{method:'BROWSER'});
+  showPersistentError(error,'页面脚本');
+});
+window.addEventListener('unhandledrejection',() => {
+  const error = diagnosticError('页面操作未完成，请复制详情反馈。',location.pathname,{method:'BROWSER'});
+  showPersistentError(error,'页面操作');
+});
 window.addEventListener('hashchange',setView);
 
 async function initialize(loadConfig=true) {
@@ -410,7 +516,7 @@ async function initialize(loadConfig=true) {
     if(loadConfig) renderConfig(await api('/api/config'));
     const results=await Promise.allSettled([api('/api/mappings'),refreshStatus(),loadReport({silent:true})]);
     if(results[0].status==='fulfilled') renderMappings(results[0].value);
-    else toast(results[0].reason.message,true);
+    else handleError(results[0].reason,'加载名称映射');
     if(results[1].status==='rejected') handleError(results[1].reason);
   } catch(error){setConnected(false);handleError(error);}
 }

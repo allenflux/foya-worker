@@ -36,6 +36,7 @@ public final class WorkerService implements AutoCloseable {
     }
     WorkerService(Path dataDir, TelegramClient telegram, TelegramDirectory directory) throws IOException {
         configs = new ConfigStore(dataDir); stats = new StatsService(dataDir); this.telegram = telegram;
+        jobs.setRedactor(this::redactSecrets);
         this.directory = directory;
         deliveriesFile = dataDir.resolve("deliveries.json");
         deliveries = Files.exists(deliveriesFile) ? Json.MAPPER.readValue(Files.readAllBytes(deliveriesFile),
@@ -70,15 +71,33 @@ public final class WorkerService implements AutoCloseable {
     static Map<String,Object> response(ReportService.Report report) {
         Map<String,Object> result = new LinkedHashMap<>();
         result.put("text", report.text()); result.put("startDate", report.startDate()); result.put("endDate", report.endDate());
-        result.put("days", report.daily().stream().map(d -> Map.of("date", d.date, "count", d.totalCount, "fee", d.totalFee)).toList());
-        result.put("channels", rankings(report.channels())); result.put("workflows", rankings(report.workflows()));
+        result.put("days", report.daily().stream().map(d -> {
+            Map<String,Object> day = new LinkedHashMap<>();
+            day.put("date", d.date); day.put("count", d.totalCount);
+            day.put("fee", report.amountsEnabled() && d.missingFeeCount == 0 ? d.totalFee : null);
+            day.put("missingFeeCount", d.missingFeeCount);
+            return day;
+        }).toList());
+        result.put("channels", rankings(report.channels(), report.amountsEnabled())); result.put("workflows", rankings(report.workflows(), report.amountsEnabled()));
         result.put("totalCount", report.daily().stream().mapToLong(d -> d.totalCount).sum());
-        result.put("totalFee", report.daily().stream().map(d -> d.totalFee).reduce(BigDecimal.ZERO, BigDecimal::add));
-        result.put("latestCount", report.daily().getFirst().totalCount); result.put("latestFee", report.daily().getFirst().totalFee);
+        result.put("totalFee", report.amountsEnabled() && report.missingFeeCount() == 0 ? report.daily().stream().map(d -> d.totalFee).reduce(BigDecimal.ZERO, BigDecimal::add) : null);
+        result.put("latestCount", report.daily().getFirst().totalCount);
+        result.put("latestFee", report.amountsEnabled() && report.daily().getFirst().missingFeeCount == 0 ? report.daily().getFirst().totalFee : null);
+        result.put("feeComplete", report.amountsEnabled() && report.missingFeeCount() == 0);
+        result.put("latestFeeComplete", report.amountsEnabled() && report.daily().getFirst().missingFeeCount == 0);
+        result.put("amountsEnabled", report.amountsEnabled());
+        result.put("missingFeeCount", report.missingFeeCount());
+        result.put("channelsBy", report.channelsBy());
         return result;
     }
-    private static List<Map<String,Object>> rankings(List<ReportService.Ranking> rows) {
-        return rows.stream().map(r -> Map.<String,Object>of("key", r.name(), "name", r.name(), "count", r.count(), "fee", r.fee(), "share", r.percent())).toList();
+    private static List<Map<String,Object>> rankings(List<ReportService.Ranking> rows, boolean amountsEnabled) {
+        return rows.stream().map(r -> {
+            Map<String,Object> row = new LinkedHashMap<>();
+            row.put("key", r.name()); row.put("name", r.name()); row.put("count", r.count());
+            row.put("fee", amountsEnabled && r.missingFeeCount() == 0 ? r.fee() : null);
+            row.put("share", r.percent()); row.put("missingFeeCount", r.missingFeeCount());
+            return row;
+        }).toList();
     }
     public Map<String,Object> pull(LocalDate endDate, boolean force) {
         AppConfig config = configs.snapshot(); config.validate();
@@ -241,6 +260,14 @@ public final class WorkerService implements AutoCloseable {
         return result;
     }
 
+    public String redactSecrets(String message) {
+        AppConfig config = configs.snapshot();
+        List<String> secrets = new ArrayList<>(List.of(config.p0ApiKey, config.llmApiKey, config.telegramBotToken));
+        config.telegramBots.forEach(bot -> secrets.add(bot.token));
+        for (String secret : secrets) if (secret != null && !secret.isBlank()) message = message.replace(secret, "[已隐藏]");
+        return message;
+    }
+
     public Map<String,Object> summaryResponse(LocalDate endDate) throws IOException {
         AppConfig config = configs.snapshot();
         return summaryResponse(config, report(config, endDate));
@@ -255,10 +282,10 @@ public final class WorkerService implements AutoCloseable {
                 if (previous != null && previous.created().plusSeconds(ttl).isAfter(Instant.now())) return previous;
                 Map<String,Object> metrics = new LinkedHashMap<>();
                 Map<String,Object> base = response(report);
-                for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee")) metrics.put(field, base.get(field));
+                for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee", "amountsEnabled", "feeComplete", "latestFeeComplete", "missingFeeCount", "channelsBy")) metrics.put(field, base.get(field));
                 metrics.put("timezone", config.timezone);
-                metrics.put("channelsTop10", rankings(report.channels().stream().limit(10).toList()));
-                metrics.put("workflowsTop10", rankings(report.workflows().stream().limit(10).toList()));
+                metrics.put("channelsTop10", rankings(report.channels().stream().limit(10).toList(), report.amountsEnabled()));
+                metrics.put("workflowsTop10", rankings(report.workflows().stream().limit(10).toList(), report.amountsEnabled()));
                 return new CachedSummary(Instant.now(), llm.summarize(config, metrics));
             });
             summary = cached.value();

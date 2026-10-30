@@ -13,8 +13,12 @@ public class DailyStats {
     public String sourceFingerprint;
     public long totalCount;
     public BigDecimal totalFee = BigDecimal.ZERO;
+    public long missingFeeCount;
+    public List<String> feeWarnings = new ArrayList<>();
     public int requestCount;
     public List<Bucket> buckets = new ArrayList<>();
 
-    public record Bucket(String hashKey, String taskType, long count, BigDecimal fee) {}
+    public record Bucket(String hashKey, String taskType, long count, BigDecimal fee, long missingFeeCount) {
+        public Bucket(String hashKey, String taskType, long count, BigDecimal fee) { this(hashKey, taskType, count, fee, 0); }
+    }
 }

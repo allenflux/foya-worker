@@ -64,7 +64,7 @@ class WorkerLlmTest {
 
     private void configure(WorkerService worker, URI mockBase, boolean enabled, boolean withKey) throws IOException {
         worker.configs.update(Json.MAPPER.valueToTree(Map.ofEntries(
-                Map.entry("reportDays", 1), Map.entry("telegramBotToken", BOT_TOKEN), Map.entry("telegramChatId", "-100123456789"),
+                Map.entry("reportDays", 1), Map.entry("amountsEnabled", true), Map.entry("telegramBotToken", BOT_TOKEN), Map.entry("telegramChatId", "-100123456789"),
                 Map.entry("llmEnabled", enabled), Map.entry("llmBaseUrl", mockBase + "/v1"),
                 Map.entry("llmApiKey", withKey ? "local-worker-llm-test-secret" : ""), Map.entry("llmModel", "local-summary-model"),
                 Map.entry("llmTimeoutSeconds", 5), Map.entry("channelNames", Map.of("alpha", "渠道甲", "beta", "渠道乙")),

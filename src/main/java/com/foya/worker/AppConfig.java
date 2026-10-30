@@ -24,6 +24,7 @@ public class AppConfig {
     // Internal migration marker: an explicitly empty list must remain empty after restart/env overrides.
     public boolean telegramBotsExplicitlyConfigured = false;
     public int reportDays = 10;
+    public boolean amountsEnabled = false;
     public String sendTime = "09:00";
     public boolean scheduleEnabled = false;
     public boolean llmEnabled = true;

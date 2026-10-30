@@ -14,11 +14,15 @@ public final class JobManager implements AutoCloseable {
     private final ArrayDeque<Map<String,Object>> logs = new ArrayDeque<>();
     private Map<String,Object> job;
     private boolean running;
+    private java.util.function.UnaryOperator<String> redactor = java.util.function.UnaryOperator.identity();
+
+    public synchronized void setRedactor(java.util.function.UnaryOperator<String> redactor) { this.redactor = redactor; }
 
     public synchronized Map<String,Object> submit(String kind, Action action) {
         if (running) throw new IllegalStateException("已有任务正在运行，请等待完成。");
         running = true;
         job = new LinkedHashMap<>();
+        job.put("id", java.util.UUID.randomUUID().toString());
         job.put("kind", kind); job.put("state", "running"); job.put("message", "任务已开始");
         job.put("startedAt", Instant.now().toString());
         log("info", kind + "任务开始");
@@ -33,11 +37,16 @@ public final class JobManager implements AutoCloseable {
     }
     private synchronized void finish(String state, String message, String error) {
         job.put("state", state); job.put("message", message); job.put("finishedAt", Instant.now().toString());
-        if (error != null) job.put("error", error);
+        if (error != null) {
+            error = redactor.apply(error);
+            job.put("error", error);
+            job.put("errorDetails", Map.of("jobId", job.get("id"), "time", job.get("finishedAt"),
+                    "step", job.get("kind"), "message", error));
+        }
         running = false; log(error == null ? "info" : "error", error == null ? message : error);
     }
     public synchronized void log(String level, String message) {
-        logs.addFirst(Map.of("time", Instant.now().toString(), "level", level, "message", message));
+        logs.addFirst(Map.of("time", Instant.now().toString(), "level", level, "message", redactor.apply(message)));
         while (logs.size() > 100) logs.removeLast();
     }
     public synchronized Map<String,Object> status() {

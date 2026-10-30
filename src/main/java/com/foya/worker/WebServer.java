@@ -30,22 +30,24 @@ public final class WebServer implements AutoCloseable {
     public void start() { server.start(); }
     public int port() { return server.getAddress().getPort(); }
     private void handle(HttpExchange exchange) throws IOException {
+        String requestId = java.util.UUID.randomUUID().toString();
         try {
             var headers = exchange.getResponseHeaders();
+            headers.set("X-Request-ID", requestId);
             headers.set("X-Content-Type-Options", "nosniff");
             headers.set("Referrer-Policy", "no-referrer");
             headers.set("Cache-Control", "no-store");
             headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
-            if (loopbackOnly && !localHost(exchange.getRequestHeaders().getFirst("Host"))) { json(exchange, 403, Map.of("error", "无效的后台访问地址。")); return; }
+            if (loopbackOnly && !localHost(exchange.getRequestHeaders().getFirst("Host"))) { error(exchange, 403, new IllegalArgumentException("无效的后台访问地址。"), requestId); return; }
             if (path.equals("/health") && method.equals("GET")) { json(exchange, 200, Map.of("status", "ok")); return; }
             if (!path.startsWith("/api/")) { staticFile(exchange, path, method); return; }
             if (!method.equals("GET")) {
-                if (!"foya-admin".equals(exchange.getRequestHeaders().getFirst("X-Requested-With"))) { json(exchange, 403, Map.of("error", "缺少后台请求标识。")); return; }
+                if (!"foya-admin".equals(exchange.getRequestHeaders().getFirst("X-Requested-With"))) { error(exchange, 403, new IllegalArgumentException("缺少后台请求标识。"), requestId); return; }
                 String origin = exchange.getRequestHeaders().getFirst("Origin");
                 String host = exchange.getRequestHeaders().getFirst("Host");
-                if (origin != null && !originMatches(origin, host)) { json(exchange, 403, Map.of("error", "不允许跨站修改配置。")); return; }
+                if (origin != null && !originMatches(origin, host)) { error(exchange, 403, new IllegalArgumentException("不允许跨站修改配置。"), requestId); return; }
             }
             switch (method + " " + path) {
                 case "GET /api/config" -> json(exchange, 200, worker.configs.publicConfig());
@@ -78,13 +80,20 @@ public final class WebServer implements AutoCloseable {
                     JsonNode input = body(exchange);
                     json(exchange, 200, worker.summaryResponse(worker.endDate(input.path("endDate").asText(""))));
                 }
-                default -> json(exchange, 404, Map.of("error", "接口不存在或请求方式不正确。"));
+                default -> error(exchange, 404, new IllegalArgumentException("接口不存在或请求方式不正确。"), requestId);
             }
-        } catch (WorkerService.MissingCacheException e) { json(exchange, 409, Map.of("error", e.getMessage())); }
-        catch (IllegalStateException e) { json(exchange, 409, Map.of("error", JobManager.safeError(e))); }
-        catch (IllegalArgumentException | com.fasterxml.jackson.core.JacksonException e) { json(exchange, 400, Map.of("error", JobManager.safeError(e))); }
-        catch (Exception e) { json(exchange, 502, Map.of("error", JobManager.safeError(e))); }
+        } catch (WorkerService.MissingCacheException e) { error(exchange, 409, e, requestId); }
+        catch (IllegalStateException e) { error(exchange, 409, e, requestId); }
+        catch (IllegalArgumentException | com.fasterxml.jackson.core.JacksonException e) { error(exchange, 400, e, requestId); }
+        catch (Exception e) { error(exchange, 502, e, requestId); }
         finally { exchange.close(); }
+    }
+    private void error(HttpExchange exchange, int status, Exception exception, String requestId) throws IOException {
+        String message = worker.redactSecrets(JobManager.safeError(exception));
+        Map<String,Object> details = Map.of("requestId", requestId, "time", java.time.Instant.now().toString(),
+                "method", exchange.getRequestMethod(), "path", exchange.getRequestURI().getPath(),
+                "status", status, "message", message);
+        json(exchange, status, Map.of("error", message, "errorDetails", details));
     }
     private static boolean localHost(String host) {
         try { return host != null && java.util.Set.of("localhost", "127.0.0.1", "[::1]", "::1").contains(URI.create("http://" + host).getHost()); }

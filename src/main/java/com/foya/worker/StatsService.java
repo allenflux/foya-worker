@@ -18,8 +18,9 @@ public final class StatsService {
     private record Key(String hash, String workflow) {}
     private static final class Aggregate {
         long count;
+        long missingFeeCount;
         BigDecimal fee = BigDecimal.ZERO;
-        void add(BigDecimal amount) { count++; fee = fee.add(amount); }
+        void add(BigDecimal amount) { count++; if (amount == null) missingFeeCount++; else fee = fee.add(amount); }
     }
 
     public StatsService(Path dataDir) { this(dataDir, new P0Client()); }
@@ -47,6 +48,7 @@ public final class StatsService {
         AtomicInteger completed = new AtomicInteger();
         AtomicLong count = new AtomicLong();
         Map<Key, Aggregate> totals = new HashMap<>();
+        Set<String> feeWarnings = new LinkedHashSet<>();
         Set<String> seenIds = ConcurrentHashMap.newKeySet();
         Consumer<Progress> observer = progress == null ? p -> {} : progress;
         Runnable notifyProgress = () -> observer.accept(new Progress(day.toString(), completed.get(), slices.size(), requests.get(), count.get()));
@@ -66,6 +68,7 @@ public final class StatsService {
                         if (task.id() != null && !seenIds.add(task.id())) continue;
                         synchronized (totals) {
                             totals.computeIfAbsent(new Key(task.hashKey(), task.taskType()), ignored -> new Aggregate()).add(task.fee());
+                            if (task.feeWarning() != null && feeWarnings.size() < 10) feeWarnings.add(task.feeWarning());
                         }
                         count.incrementAndGet();
                     }
@@ -91,10 +94,12 @@ public final class StatsService {
             totals.entrySet().stream().sorted(Comparator.comparing((Map.Entry<Key, Aggregate> e) -> e.getKey().hash)
                     .thenComparing(e -> e.getKey().workflow)).forEach(entry -> {
                 Aggregate a = entry.getValue();
-                result.buckets.add(new DailyStats.Bucket(entry.getKey().hash, entry.getKey().workflow, a.count, a.fee));
+                result.buckets.add(new DailyStats.Bucket(entry.getKey().hash, entry.getKey().workflow, a.count, a.fee, a.missingFeeCount));
                 result.totalCount += a.count;
+                result.missingFeeCount += a.missingFeeCount;
                 result.totalFee = result.totalFee.add(a.fee);
             });
+            result.feeWarnings = new ArrayList<>(feeWarnings);
             writeDay(result);
             return result;
         } finally {
@@ -140,7 +145,7 @@ public final class StatsService {
                 LocalDate date = LocalDate.parse(file.getFileName().toString().substring(0, 10));
                 DailyStats stats = readDay(date, fingerprint);
                 if (stats != null) result.add(Map.of("date", stats.date, "count", stats.totalCount, "fee", stats.totalFee,
-                        "fetchedAt", stats.fetchedAt, "requests", stats.requestCount, "timezone", stats.timezone));
+                        "fetchedAt", stats.fetchedAt, "requests", stats.requestCount, "timezone", stats.timezone, "missingFeeCount", stats.missingFeeCount));
             }
         }
         return result;
@@ -155,15 +160,18 @@ public final class StatsService {
         if (result.schemaVersion != 1 || !day.toString().equals(result.date) || !fingerprint.equals(result.sourceFingerprint)
                 || result.fetchedAt == null || result.timezone == null || result.buckets == null || result.totalFee == null) return null;
         long totalCount = 0;
+        long missingFeeCount = 0;
         BigDecimal totalFee = BigDecimal.ZERO;
         Set<Key> keys = new HashSet<>();
         for (DailyStats.Bucket bucket : result.buckets) {
             if (bucket == null || bucket.hashKey() == null || bucket.taskType() == null || bucket.count() < 1 || bucket.fee() == null
+                    || bucket.missingFeeCount() < 0 || bucket.missingFeeCount() > bucket.count()
                     || !keys.add(new Key(bucket.hashKey(), bucket.taskType()))) return null;
             totalCount += bucket.count();
+            missingFeeCount += bucket.missingFeeCount();
             totalFee = totalFee.add(bucket.fee());
         }
-        if (totalCount != result.totalCount || totalFee.compareTo(result.totalFee) != 0) return null;
+        if (totalCount != result.totalCount || totalFee.compareTo(result.totalFee) != 0 || missingFeeCount != result.missingFeeCount) return null;
         return result;
     }
 

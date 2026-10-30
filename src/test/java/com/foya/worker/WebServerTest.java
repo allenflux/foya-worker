@@ -6,12 +6,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -103,7 +108,15 @@ class WebServerTest {
     void missingCacheIsConflictAndUnknownApiIsNotFound() throws Exception {
         HttpResponse<String> report = send(request("/api/report").GET());
         assertEquals(409, report.statusCode());
-        assertTrue(Json.MAPPER.readTree(report.body()).path("error").asText().contains("缓存"));
+        JsonNode emptyReport = Json.MAPPER.readTree(report.body());
+        assertTrue(emptyReport.path("error").asText().contains("缓存"));
+        assertEquals(409, emptyReport.path("errorDetails").path("status").asInt());
+        assertEquals("/api/report", emptyReport.path("errorDetails").path("path").asText());
+        HttpResponse<String> status = send(request("/api/status").GET());
+        assertEquals(200, status.statusCode());
+        JsonNode emptyState = Json.MAPPER.readTree(status.body());
+        assertTrue(emptyState.path("cacheDays").isEmpty());
+        assertFalse(emptyState.path("running").asBoolean());
         assertEquals(404, send(request("/api/does-not-exist").GET()).statusCode());
     }
 
@@ -123,5 +136,66 @@ class WebServerTest {
                 .PUT(HttpRequest.BodyPublishers.ofString("{}")));
         assertEquals(400, response.statusCode());
         assertTrue(Json.MAPPER.readTree(response.body()).path("error").asText().contains("JSON"));
+    }
+
+    @Test
+    void invalidConfigReturnsCopyableErrorDetailsWithoutQueryOrRawBody() throws Exception {
+        String rawMarker = "RAW_BODY_MUST_NOT_ECHO";
+        HttpResponse<String> response = send(request("/api/config?trace=PRIVATE_QUERY_MUST_NOT_ECHO")
+                .header("X-Requested-With", "foya-admin")
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"reportDays\":99,\"bodyMarker\":\"" + rawMarker + "\"}")));
+        assertEquals(400, response.statusCode());
+        JsonNode body = Json.MAPPER.readTree(response.body());
+        JsonNode details = body.path("errorDetails");
+        assertTrue(details.isObject());
+        String requestId = response.headers().firstValue("X-Request-ID").orElseThrow();
+        assertDoesNotThrow(() -> UUID.fromString(requestId));
+        assertEquals(requestId, details.path("requestId").asText());
+        assertDoesNotThrow(() -> Instant.parse(details.path("time").asText()));
+        assertEquals("PUT", details.path("method").asText());
+        assertEquals("/api/config", details.path("path").asText());
+        assertEquals(400, details.path("status").asInt());
+        assertEquals(body.path("error").asText(), details.path("message").asText());
+        assertTrue(details.path("message").asText().contains("天数"));
+        assertFalse(response.body().contains(rawMarker));
+        assertFalse(response.body().contains("bodyMarker"));
+        assertFalse(response.body().contains("PRIVATE_QUERY_MUST_NOT_ECHO"));
+        assertFalse(details.has("requestBody"));
+        assertEquals(10, worker.configs.snapshot().reportDays);
+    }
+
+    @Test
+    void asynchronousErrorDetailsAndLogsRedactUnlabelledConfiguredSecrets() throws Exception {
+        String llmSecret = "sk-unlabelled-private-value";
+        String botSecret = "123456:BOT_PRIVATE_EXACT";
+        String p0Secret = "bare-private-p0-value";
+        worker.configs.update(Json.MAPPER.valueToTree(Map.of("llmApiKey", llmSecret, "p0ApiKey", p0Secret,
+                "telegramBots", List.of(Map.of("id", "error-bot", "token", botSecret)))));
+        String privateMessage = "模拟异常的原始说明 " + llmSecret + " " + botSecret + " " + p0Secret;
+        worker.jobs.submit("模拟失败", () -> {
+            worker.jobs.log("error", privateMessage);
+            throw new IOException(privateMessage);
+        });
+        long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
+        while (worker.jobs.isRunning() && System.nanoTime() < deadline) Thread.sleep(10);
+        assertFalse(worker.jobs.isRunning());
+        HttpResponse<String> response = send(request("/api/status").GET());
+        assertEquals(200, response.statusCode());
+        JsonNode status = Json.MAPPER.readTree(response.body());
+        JsonNode job = status.path("job");
+        JsonNode details = job.path("errorDetails");
+        assertEquals("failed", job.path("state").asText());
+        assertDoesNotThrow(() -> UUID.fromString(job.path("id").asText()));
+        assertEquals(job.path("id").asText(), details.path("jobId").asText());
+        assertEquals("模拟失败", details.path("step").asText());
+        assertDoesNotThrow(() -> Instant.parse(details.path("time").asText()));
+        assertEquals(job.path("error").asText(), details.path("message").asText());
+        assertTrue(details.path("message").asText().contains("模拟异常"));
+        assertTrue(details.path("message").asText().contains("[已隐藏]"));
+        assertFalse(status.path("logs").isEmpty());
+        for (String secret : List.of(llmSecret, botSecret, p0Secret)) {
+            assertFalse(response.body().contains(secret), "status, job details and logs must not expose configured secrets");
+        }
     }
 }

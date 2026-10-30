@@ -7,8 +7,28 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ReportServiceTest {
+    @Test void amountsAreDisabledByDefaultEvenWhenAllSourceFeesAreKnown() {
+        AppConfig config = new AppConfig(); config.reportDays = 1;
+        assertFalse(config.amountsEnabled);
+        DailyStats day = new DailyStats(); day.date = "2026-10-29";
+        day.totalCount = 4; day.totalFee = new BigDecimal("130");
+        day.buckets.add(new DailyStats.Bucket("few-expensive", "edit", 1, new BigDecimal("100")));
+        day.buckets.add(new DailyStats.Bucket("many-cheap", "edit", 3, new BigDecimal("30")));
+        var report = new ReportService().build(config, List.of(day));
+        assertFalse(report.amountsEnabled());
+        assertEquals("count", report.channelsBy());
+        assertEquals("many-cheap", report.channels().getFirst().name());
+        assertEquals(new BigDecimal("75.0"), report.channels().getFirst().percent());
+        assertTrue(report.text().contains("10/29｜4｜未统计"));
+        assertTrue(report.text().contains("1. many-cheap｜3｜未统计｜75.0%"));
+        assertTrue(report.text().endsWith("金额暂未统计，渠道按单数排名。"));
+        assertEquals(0, report.missingFeeCount());
+        assertEquals(new BigDecimal("130"), day.totalFee, "Source cache is retained for a later pricing implementation");
+    }
+
     @Test void rendersRequestedLayoutTopTenAndRemainingTotals() {
         AppConfig config = new AppConfig();
+        config.amountsEnabled = true;
         config.reportDays = 10;
         config.channelNames.put("h0", "瑞升-原嘉华");
         config.workflowNames.put("w0", "图片换脸");
@@ -38,6 +58,7 @@ class ReportServiceTest {
 
     @Test void zeroDayHasNoNanAndMissingDaysNeverBecomeZeroStatistics() {
         AppConfig config = new AppConfig();
+        config.amountsEnabled = true;
         config.reportDays = 1;
         DailyStats empty = new DailyStats();
         empty.date = "2026-10-29";
@@ -51,6 +72,7 @@ class ReportServiceTest {
 
     @Test void doesNotMergeDifferentRawChannelsSharingDisplayName() {
         AppConfig config = new AppConfig();
+        config.amountsEnabled = true;
         config.reportDays = 1;
         config.channelNames.put("a", "相同名称");
         config.channelNames.put("b", "相同名称");
