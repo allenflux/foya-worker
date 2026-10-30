@@ -3,7 +3,7 @@ package com.foya.worker;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.*;
 import java.util.*;
@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.*;
 import java.util.function.Consumer;
 
 public final class StatsService {
-    private final Path cacheDir;
+    private final DailyCacheStore cacheStore;
     private final P0Client client;
     public record Progress(String date, int completedHours, int totalHours, int requests, long count) {}
     private record Key(String hash, String workflow) {}
@@ -23,8 +23,13 @@ public final class StatsService {
         void add(BigDecimal amount) { count++; if (amount == null) missingFeeCount++; else fee = fee.add(amount); }
     }
 
-    public StatsService(Path dataDir) { this(dataDir, new P0Client()); }
-    StatsService(Path dataDir, P0Client client) { this.cacheDir = dataDir.resolve("cache"); this.client = client; }
+    public StatsService(Path dataDir) { this(new RemoteDailyCacheStore()); }
+    StatsService(Path dataDir, P0Client client) { this(new RemoteDailyCacheStore(), client); }
+    StatsService(DailyCacheStore cacheStore) { this(cacheStore, new P0Client()); }
+    StatsService(DailyCacheStore cacheStore, P0Client client) {
+        this.cacheStore = Objects.requireNonNull(cacheStore);
+        this.client = Objects.requireNonNull(client);
+    }
 
     public DailyStats pullDay(AppConfig config, LocalDate day, boolean force, Consumer<Progress> progress) throws Exception {
         ZoneId zone = ZoneId.of(config.timezone);
@@ -32,7 +37,7 @@ public final class StatsService {
         String apiKey = P0Client.resolveApiKey(config);
         String fingerprint = fingerprint(config, apiKey);
         if (!force) {
-            DailyStats cached = readDay(day, fingerprint);
+            DailyStats cached = readDay(config, day, fingerprint);
             if (cached != null) return cached;
         }
         ZonedDateTime start = day.atStartOfDay(zone);
@@ -100,7 +105,7 @@ public final class StatsService {
                 result.totalFee = result.totalFee.add(a.fee);
             });
             result.feeWarnings = new ArrayList<>(feeWarnings);
-            writeDay(result);
+            cacheStore.write(config, result);
             return result;
         } finally {
             futures.forEach(f -> f.cancel(true));
@@ -129,34 +134,23 @@ public final class StatsService {
         String fingerprint = fingerprint(config, P0Client.resolveApiKey(config));
         List<DailyStats> result = new ArrayList<>();
         for (int i = 0; i < days; i++) {
-            DailyStats stats = readDay(endDate.minusDays(i), fingerprint);
+            DailyStats stats = readDay(config, endDate.minusDays(i), fingerprint);
             if (stats != null) result.add(stats);
         }
         return result;
     }
 
     public List<Map<String, Object>> cacheIndex(AppConfig config) throws IOException {
-        if (!Files.isDirectory(cacheDir)) return List.of();
         String fingerprint = fingerprint(config, P0Client.resolveApiKey(config));
         List<Map<String, Object>> result = new ArrayList<>();
-        try (var files = Files.list(cacheDir)) {
-            for (Path file : files.filter(p -> p.getFileName().toString().matches("\\d{4}-\\d{2}-\\d{2}\\.json"))
-                    .sorted(Comparator.reverseOrder()).toList()) {
-                LocalDate date = LocalDate.parse(file.getFileName().toString().substring(0, 10));
-                DailyStats stats = readDay(date, fingerprint);
-                if (stats != null) result.add(Map.of("date", stats.date, "count", stats.totalCount, "fee", stats.totalFee,
-                        "fetchedAt", stats.fetchedAt, "requests", stats.requestCount, "timezone", stats.timezone, "missingFeeCount", stats.missingFeeCount));
-            }
-        }
+        for (LocalDate date : cacheStore.dates(config, fingerprint).stream().distinct().sorted(Comparator.reverseOrder()).toList())
+            result.add(Map.of("date", date.toString(), "remote", true));
         return result;
     }
 
-    private DailyStats readDay(LocalDate day, String fingerprint) throws IOException {
-        Path file = cacheDir.resolve(day + ".json");
-        if (!Files.exists(file)) return null;
-        DailyStats result;
-        try { result = Json.MAPPER.readValue(file.toFile(), DailyStats.class); }
-        catch (IOException e) { return null; } // Corrupt/incomplete caches must be repulled.
+    private DailyStats readDay(AppConfig config, LocalDate day, String fingerprint) throws IOException {
+        DailyStats result = cacheStore.read(config, day, fingerprint);
+        if (result == null) return null;
         if (result.schemaVersion != 1 || !day.toString().equals(result.date) || !fingerprint.equals(result.sourceFingerprint)
                 || result.fetchedAt == null || result.timezone == null || result.buckets == null || result.totalFee == null) return null;
         long totalCount = 0;
@@ -173,10 +167,6 @@ public final class StatsService {
         }
         if (totalCount != result.totalCount || totalFee.compareTo(result.totalFee) != 0 || missingFeeCount != result.missingFeeCount) return null;
         return result;
-    }
-
-    private void writeDay(DailyStats result) throws IOException {
-        FilesSupport.writeJson(cacheDir.resolve(result.date + ".json"), result);
     }
 
     static String fingerprint(AppConfig config, String apiKey) {

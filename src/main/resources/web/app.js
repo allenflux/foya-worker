@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (selector) => document.querySelector(selector);
-const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
+const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
 const viewNames = {overview:'统计概览',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
@@ -318,10 +318,24 @@ function renderStatus(status) {
   $('#job-message').textContent = status.job?.message || '正在处理，请稍候…';
   $('#current-job').textContent = running ? (['send','发送报表'].includes(status.job?.kind) ? '正在发送' : (status.job?.kind === '定时报表' ? '正在执行定时报表' : '正在拉取')) : (status.job?.state === 'failed' ? '执行失败' : '空闲');
   const cacheDays = status.cacheDays || [];
-  $('#cache-count').textContent = `${cacheDays.length} 天`;
+  const cacheError = status.cacheError ? redactDiagnostic(status.cacheError) : '';
+  $('#cache-count').textContent = cacheError ? '读取失败' : `${cacheDays.length} 天`;
+  $('#cache-count').classList.toggle('text-danger',Boolean(cacheError));
   $('#last-sent').textContent = status.lastSentDate || '尚未发送';
   $('#next-run').textContent = status.nextRun ? formatTime(status.nextRun) : (state.config?.scheduleEnabled ? '等待下次计划' : '未启用');
-  $('#cache-dates').innerHTML = cacheDays.length ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('') : '<span class="small text-body-secondary">暂无远程缓存</span>';
+  $('#cache-dates').classList.toggle('text-danger',Boolean(cacheError));
+  if (cacheError) {
+    $('#cache-dates').textContent = '远程缓存目录读取失败，请查看错误详情。';
+    if (state.cacheErrorSignature !== cacheError) {
+      state.cacheErrorSignature = cacheError;
+      const error = diagnosticError(cacheError,'/api/status',{method:'GET'});
+      error.diagnostics.step = '读取远程缓存';
+      showPersistentError(error,'读取远程缓存');
+    }
+  } else {
+    state.cacheErrorSignature = null;
+    $('#cache-dates').innerHTML = cacheDays.length ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('') : '<span class="small text-body-secondary">暂无远程缓存</span>';
+  }
   const logs = status.logs || [];
   $('#logs-empty').classList.toggle('hidden',logs.length > 0);
   $('#log-rows').innerHTML = [...logs].sort((a,b) => String(b.time || '').localeCompare(String(a.time || ''))).map((log) => {

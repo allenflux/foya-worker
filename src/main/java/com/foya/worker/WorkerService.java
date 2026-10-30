@@ -35,7 +35,10 @@ public final class WorkerService implements AutoCloseable {
         this(dataDir, telegram, new TelegramDirectory(dataDir));
     }
     WorkerService(Path dataDir, TelegramClient telegram, TelegramDirectory directory) throws IOException {
-        configs = new ConfigStore(dataDir); stats = new StatsService(dataDir); this.telegram = telegram;
+        this(dataDir, telegram, directory, new RemoteDailyCacheStore());
+    }
+    WorkerService(Path dataDir, TelegramClient telegram, TelegramDirectory directory, DailyCacheStore cacheStore) throws IOException {
+        configs = new ConfigStore(dataDir); stats = new StatsService(cacheStore); this.telegram = telegram;
         jobs.setRedactor(this::redactSecrets);
         this.directory = directory;
         deliveriesFile = dataDir.resolve("deliveries.json");
