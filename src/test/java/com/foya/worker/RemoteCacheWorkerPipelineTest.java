@@ -20,7 +20,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +48,7 @@ class RemoteCacheWorkerPipelineTest {
         String fixtureBase = "http://127.0.0.1:" + fixture.getAddress().getPort();
         fixture.createContext("/api/tasks/list", exchange -> {
             p0Calls.incrementAndGet();
-            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"));
             reply(exchange, 200, Map.of("code", 0, "data", Map.of("total", 1, "has_more", false,
                     "list", List.of(Map.of("id", hour.toString(), "hash_key", "remote_hash", "task_type", "remote_type",
                             "created_at", hour.plusMinutes(15).toString(), "status", 2)))));

@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class FeeOptionalPipelineTest {
     @TempDir Path directory;
     private static final String BOT_TOKEN = "123456:FEE_OPTIONAL_MOCK_TOKEN";
-    private static final DateTimeFormatter LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private record Result(JsonNode report, JsonNode cache, String deliveredText, int p0Requests, LocalDate day) {}
 
     @Test
@@ -113,7 +112,7 @@ class FeeOptionalPipelineTest {
         fixture.setExecutor(fixtureThreads);
         fixture.createContext("/api/tasks/list", exchange -> {
             p0Requests.incrementAndGet();
-            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"), LOCAL_TIME);
+            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"));
             Map<String, Object> known = task(hour + "-known", "known_channel", "workflow_known", hour.plusMinutes(10));
             known.put("fee", missingFees || !enableAmounts ? "2.50" : 0);
             Map<String, Object> optional = task(hour + "-optional", "optional_channel", "workflow_optional", hour.plusMinutes(20));

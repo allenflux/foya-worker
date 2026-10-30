@@ -171,7 +171,9 @@ public final class StatsService {
 
     static String fingerprint(AppConfig config, String apiKey) {
         try {
-            String source = config.p0Endpoint + "\n" + config.timezone + "\n" + config.p0TimeFormat + "\nstatus=2\n" + apiKey;
+            // Counting-contract changes must not reuse aggregates produced by the old query/identity rules.
+            String source = "counting=iso-microseconds-uuid-v2\n" + config.p0Endpoint + "\n" + config.timezone
+                    + "\n" + config.p0TimeFormat + "\nstatus=2\n" + apiKey;
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) { throw new IllegalStateException("无法计算缓存数据源标识", e); }
     }

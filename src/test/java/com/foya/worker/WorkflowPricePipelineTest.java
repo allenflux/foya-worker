@@ -21,7 +21,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +44,7 @@ class WorkflowPricePipelineTest {
         fixture.setExecutor(fixtureThreads);
         fixture.createContext("/api/tasks/list", exchange -> {
             p0Calls.incrementAndGet();
-            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            LocalDateTime hour = LocalDateTime.parse(query(exchange).get("start_time"));
             // A huge upstream fee and a missing fee must both be ignored when applying configured unit prices.
             Map<String, Object> a = new HashMap<>(Map.of("id", hour + "-A", "hash_key", "channelA", "task_type", "typeA",
                     "created_at", hour.plusMinutes(10).toString(), "status", 2, "fee", "999"));

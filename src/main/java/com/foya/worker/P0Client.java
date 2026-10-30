@@ -24,7 +24,7 @@ import java.util.function.Consumer;
 public final class P0Client {
     static final int PAGE_SIZE = 1000;
     private static final int MAX_PAGES = 10_000;
-    private static final DateTimeFormatter LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS");
     private final HttpClient http;
     private final RetrySleeper retrySleeper;
     private final Duration requestTimeout;
@@ -125,8 +125,11 @@ public final class P0Client {
     private Page request(AppConfig config, String apiKey, ZonedDateTime start, ZonedDateTime end,
                          int page, int pageSize, Runnable requested) throws Exception {
         String endpoint = config.p0Endpoint;
+        // The upstream compares ISO wall-clock strings and includes both endpoints.
+        // Express our half-open hourly window with its inclusive microsecond end.
+        ZonedDateTime queryEnd = "datetime".equals(config.p0TimeFormat) ? end.minusNanos(1_000) : end;
         String query = "status=2&start_time=" + encode(format(start, config.p0TimeFormat))
-                + "&end_time=" + encode(format(end, config.p0TimeFormat))
+                + "&end_time=" + encode(format(queryEnd, config.p0TimeFormat))
                 + "&page=" + page + "&page_size=" + pageSize;
         URI uri = URI.create(endpoint + (endpoint.contains("?") ? "&" : "?") + query);
         int maxAttempts = config.p0MaxAttempts;
@@ -260,7 +263,8 @@ public final class P0Client {
                     feeWarning = feeDiagnostic(itemsPath, rowIndex, row, feeValue.isTextual() ? "非数字字符串" : "非有效数值").getMessage();
                 }
             }
-            String id = firstText(row, "id", "task_id", "taskId", "uuid");
+            // uuid identifies a source record; caller-supplied business task IDs can repeat.
+            String id = firstText(row, "uuid", "id", "task_id", "taskId");
             Instant createdAt = null;
             String rawTime = firstText(row, "create_time", "created_at", "created_time", "createdAt", "createTime", "createdTime", "created_on", "createdOn");
             if (rawTime != null) createdAt = parseTime(rawTime, zone);

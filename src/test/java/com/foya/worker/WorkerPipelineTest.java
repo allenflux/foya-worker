@@ -21,7 +21,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -56,7 +55,7 @@ class WorkerPipelineTest {
             if (!"2".equals(query.get("status")) || !"1000".equals(query.get("page_size")) || !"1".equals(query.get("page")))
                 invalidRequests.add("unexpected status/page parameters");
             try {
-                LocalDateTime hour = LocalDateTime.parse(query.get("start_time"), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                LocalDateTime hour = LocalDateTime.parse(query.get("start_time"));
                 String createdAt = hour.plusMinutes(15).toString();
                 List<Map<String, Object>> rows = new ArrayList<>();
                 if (hour.toLocalDate().equals(latest)) {

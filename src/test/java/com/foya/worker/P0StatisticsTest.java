@@ -48,7 +48,7 @@ class P0StatisticsTest {
     @Test void aggregatesExactFeesWithHalfOpenBoundariesAndCachesCompleteDay() throws Exception {
         serve(q -> {
             String start = q.get("start_time");
-            String end = q.get("end_time");
+            String end = LocalDateTime.parse(q.get("end_time")).plusNanos(1000).toString();
             return "{\"code\":0,\"data\":{\"total\":3,\"list\":["
                     + row(start + "a", "alpha", "1", "0.10", start) + ","
                     + row(start + "b", "alpha", "2", "0.20", start) + ","
