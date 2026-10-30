@@ -1,0 +1,15 @@
+body{font-size:.9rem}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.svg-sprite{position:absolute;width:0;height:0;overflow:hidden}
+.workspace-main{min-width:0;max-width:1440px;margin:auto}
+.view{display:none}.view.active{display:block}.hidden{display:none!important}
+.date-control{width:auto;max-width:285px}
+.table th,.table td{padding:.75rem 1rem;font-variant-numeric:tabular-nums}
+.report-preview{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}
+.report-scroll{max-height:38rem;overflow:auto}
+.connection-dot,.tiny-dot,.schedule-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bs-secondary-color);flex-shrink:0}
+.connection-dot.ok,.tiny-dot.teal,.schedule-dot.enabled{background:var(--bs-success)}
+.connection-dot.error{background:var(--bs-danger)}.tiny-dot.blue{background:var(--bs-primary)}
+#toast{z-index:1100;max-width:calc(100vw - 2rem);width:max-content}
+.spinning{animation:spin 1.3s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinning{animation:none}}

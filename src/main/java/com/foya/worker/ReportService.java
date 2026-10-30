@@ -1,0 +1,98 @@
+package com.foya.worker;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+public final class ReportService {
+    private static final DateTimeFormatter MD = DateTimeFormatter.ofPattern("MM/dd");
+    public record Ranking(String name, long count, BigDecimal fee, BigDecimal percent) {}
+    public record Report(String startDate, String endDate, int days, String text, List<DailyStats> daily,
+                         List<Ranking> channels, List<Ranking> workflows) {}
+    private static class Sum {
+        long count;
+        BigDecimal fee = BigDecimal.ZERO;
+        void add(DailyStats.Bucket bucket) { count += bucket.count(); fee = fee.add(bucket.fee()); }
+    }
+
+    public Report build(AppConfig config, List<DailyStats> supplied) {
+        if (supplied == null || supplied.isEmpty()) throw new IllegalArgumentException("尚无缓存，请先拉取完整统计日期");
+        List<DailyStats> days = supplied.stream().sorted(Comparator.comparing((DailyStats d) -> d.date).reversed()).toList();
+        if (days.size() != config.reportDays) throw new IllegalArgumentException("报表需要连续 " + config.reportDays + " 天完整缓存，当前仅 " + days.size() + " 天");
+        LocalDate end = LocalDate.parse(days.getFirst().date);
+        for (int i = 0; i < days.size(); i++) if (!days.get(i).date.equals(end.minusDays(i).toString()))
+            throw new IllegalArgumentException("报表日期不连续，请先补拉缺失日期");
+        DailyStats latest = days.getFirst();
+        Map<String, Sum> channels = new HashMap<>();
+        Map<String, Sum> workflows = new HashMap<>();
+        for (DailyStats.Bucket bucket : latest.buckets) {
+            // Aggregate by raw keys first. Two channels sharing a display name remain distinct.
+            channels.computeIfAbsent(bucket.hashKey(), ignored -> new Sum()).add(bucket);
+            workflows.computeIfAbsent(bucket.taskType(), ignored -> new Sum()).add(bucket);
+        }
+        List<Ranking> channelRanking = channels.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<String, Sum>, BigDecimal>comparing(e -> e.getValue().fee).reversed()
+                        .thenComparing(Map.Entry::getKey))
+                .map(e -> new Ranking(channelName(e.getKey(), config), e.getValue().count, e.getValue().fee,
+                        percent(e.getValue().fee, latest.totalFee))).toList();
+        List<Ranking> workflowRanking = workflows.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<String, Sum>>comparingLong(e -> e.getValue().count).reversed()
+                        .thenComparing(Map.Entry::getKey))
+                .map(e -> new Ranking(workflowName(e.getKey(), config), e.getValue().count, e.getValue().fee,
+                        percent(BigDecimal.valueOf(e.getValue().count), BigDecimal.valueOf(latest.totalCount)))).toList();
+        LocalDate first = end.minusDays(days.size() - 1L);
+        StringBuilder text = new StringBuilder("AIAPI 日统计｜").append(first.format(MD)).append('–').append(end.format(MD))
+                .append('（').append(days.size()).append("天）\n【每日】日期｜单数｜金额\n");
+        for (DailyStats d : days) text.append(LocalDate.parse(d.date).format(MD)).append('｜').append(number(d.totalCount))
+                .append('｜').append(number(d.totalFee)).append('\n');
+        text.append("【渠道TOP10】").append(end.format(MD)).append(" 按金额降序：渠道｜单数｜金额｜占比\n");
+        for (int i = 0; i < Math.min(10, channelRanking.size()); i++) {
+            Ranking r = channelRanking.get(i);
+            text.append(i + 1).append(". ").append(clean(r.name())).append('｜').append(number(r.count()))
+                    .append('｜').append(number(r.fee())).append('｜').append(r.percent().toPlainString()).append("%\n");
+        }
+        if (channelRanking.size() > 10) {
+            List<Ranking> rest = channelRanking.subList(10, channelRanking.size());
+            long count = rest.stream().mapToLong(Ranking::count).sum();
+            BigDecimal fee = rest.stream().map(Ranking::fee).reduce(BigDecimal.ZERO, BigDecimal::add);
+            text.append("其他渠道（").append(rest.size()).append("）｜").append(number(count)).append('｜').append(number(fee))
+                    .append('｜').append(percent(fee, latest.totalFee).toPlainString()).append("%\n");
+        }
+        text.append("【工作流 TOP10】").append(end.format(MD)).append("：工作流｜单数｜占比\n");
+        for (int i = 0; i < Math.min(10, workflowRanking.size()); i++) {
+            Ranking r = workflowRanking.get(i);
+            text.append(i + 1).append(". ").append(clean(r.name())).append('｜').append(number(r.count()))
+                    .append('｜').append(r.percent().toPlainString()).append("%\n");
+        }
+        if (workflowRanking.size() > 10) {
+            List<Ranking> rest = workflowRanking.subList(10, workflowRanking.size());
+            long count = rest.stream().mapToLong(Ranking::count).sum();
+            text.append("其余 ").append(rest.size()).append(" 项合计｜").append(number(count)).append('｜')
+                    .append(percent(BigDecimal.valueOf(count), BigDecimal.valueOf(latest.totalCount)).toPlainString()).append("%\n");
+        }
+        return new Report(first.toString(), end.toString(), days.size(), text.toString().stripTrailing(), days,
+                channelRanking, workflowRanking);
+    }
+
+    private static String channelName(String key, AppConfig config) {
+        if (config.channelNames != null && config.channelNames.containsKey(key)) return config.channelNames.get(key);
+        return key.isBlank() ? "未分類" : key;
+    }
+    private static String workflowName(String key, AppConfig config) {
+        return config.workflowNames != null ? config.workflowNames.getOrDefault(key, key) : key;
+    }
+    private static String clean(String name) { return name.replaceAll("[\\r\\n\\t｜]", " "); }
+    private static BigDecimal percent(BigDecimal part, BigDecimal total) {
+        return total.signum() == 0 ? BigDecimal.ZERO.setScale(1) : part.multiply(BigDecimal.valueOf(100)).divide(total, 1, RoundingMode.HALF_UP);
+    }
+    private static String number(long n) { return String.format(Locale.US, "%,d", n); }
+    // Keep decimal fee precision. No currency or fee multiplier is invented.
+    private static String number(BigDecimal n) {
+        DecimalFormat format = new DecimalFormat("#,##0.############################", DecimalFormatSymbols.getInstance(Locale.US));
+        return format.format(n.stripTrailingZeros());
+    }
+}

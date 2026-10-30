@@ -1,0 +1,14 @@
+.git
+.idea
+.agents
+.codex
+.env
+.env.*
+!.env.example
+data
+target
+out
+*.iml
+README.md
+docs
+src/test
