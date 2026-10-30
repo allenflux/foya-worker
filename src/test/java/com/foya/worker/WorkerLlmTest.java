@@ -30,7 +30,7 @@ class WorkerLlmTest {
     @TempDir Path directory;
     private static final LocalDate END_DATE = LocalDate.of(2026, 10, 29);
     private static final String BOT_TOKEN = "123456:WORKER_LLM_TEST_TOKEN";
-    private static final String SUMMARY = "1. 当日共 4 单，金额 100.25。\n2. 渠道甲金额占比为 75.1%。";
+    private static final String SUMMARY = "1. 当日共 4 单，金额 100.25。\n2. 渠道甲金额占比为 74.8%。";
     private final AtomicInteger llmCalls = new AtomicInteger();
     private final List<JsonNode> llmPayloads = Collections.synchronizedList(new ArrayList<>());
     private final List<JsonNode> sentMessages = Collections.synchronizedList(new ArrayList<>());
@@ -64,7 +64,8 @@ class WorkerLlmTest {
 
     private void configure(WorkerService worker, URI mockBase, boolean enabled, boolean withKey) throws IOException {
         worker.configs.update(Json.MAPPER.valueToTree(Map.ofEntries(
-                Map.entry("reportDays", 1), Map.entry("amountsEnabled", true), Map.entry("telegramBotToken", BOT_TOKEN), Map.entry("telegramChatId", "-100123456789"),
+                Map.entry("reportDays", 1), Map.entry("amountsEnabled", true),
+                Map.entry("taskTypePrices", Map.of("edit", new BigDecimal("25.00"), "video", new BigDecimal("25.25"))), Map.entry("telegramBotToken", BOT_TOKEN), Map.entry("telegramChatId", "-100123456789"),
                 Map.entry("llmEnabled", enabled), Map.entry("llmBaseUrl", mockBase + "/v1"),
                 Map.entry("llmApiKey", withKey ? "local-worker-llm-test-secret" : ""), Map.entry("llmModel", "local-summary-model"),
                 Map.entry("llmTimeoutSeconds", 5), Map.entry("channelNames", Map.of("alpha", "渠道甲", "beta", "渠道乙")),

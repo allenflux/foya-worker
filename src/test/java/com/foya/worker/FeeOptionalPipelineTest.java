@@ -141,7 +141,10 @@ class FeeOptionalPipelineTest {
                     "channelNames", Map.of("known_channel", "已知金额渠道", "optional_channel", "金额可选渠道"),
                     "workflowNames", Map.of("workflow_known", "已知工作流", "workflow_optional", "可选工作流")));
             // The counts-only branches deliberately omit the flag to exercise the default.
-            if (enableAmounts) config.put("amountsEnabled", true);
+            if (enableAmounts) {
+                config.put("amountsEnabled", true);
+                config.put("taskTypePrices", Map.of("workflow_known", BigDecimal.ZERO, "workflow_optional", BigDecimal.ZERO));
+            }
             assertEquals(200, request(http, base, "PUT", "/api/config", config).statusCode());
             assertEquals(202, request(http, base, "POST", "/api/pull", Map.of("endDate", day.toString())).statusCode());
             awaitJob(worker);

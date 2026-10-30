@@ -54,7 +54,7 @@ public final class ConfigStore {
         AppConfig effective = snapshot();
         ObjectNode safe = Json.MAPPER.valueToTree(effective);
         safe.remove("p0ApiKey"); safe.remove("telegramBotToken"); safe.remove("llmApiKey");
-        safe.remove("channelNames"); safe.remove("workflowNames"); safe.remove("telegramBotsExplicitlyConfigured");
+        safe.remove("channelNames"); safe.remove("workflowNames"); safe.remove("taskTypePrices"); safe.remove("telegramBotsExplicitlyConfigured");
         ArrayNode bots = Json.MAPPER.createArrayNode();
         for (TelegramBotConfig bot : effective.telegramBots) {
             ObjectNode item = Json.MAPPER.valueToTree(bot);
@@ -78,6 +78,12 @@ public final class ConfigStore {
         while (fields.hasNext()) {
             var field = fields.next();
             if (!merged.has(field.getKey()) || field.getKey().equals("telegramBots") || field.getKey().equals("telegramBotsExplicitlyConfigured")) continue;
+            if (field.getKey().equals("taskTypePrices")) {
+                merged.set("taskTypePrices", Json.MAPPER.valueToTree(parsePrices(field.getValue())));
+                continue;
+            }
+            if (field.getKey().equals("amountsEnabled") && !field.getValue().isBoolean())
+                throw new IllegalArgumentException("金额统计开关应为布尔值。");
             if (List.of("p0ApiKey", "telegramBotToken", "llmApiKey").contains(field.getKey())) {
                 if (!field.getValue().isTextual()) throw new IllegalArgumentException("密钥配置应为字符串。");
                 if (field.getValue().asText().isBlank()) continue;
@@ -99,6 +105,21 @@ public final class ConfigStore {
             merged.put("telegramBotToken", ""); merged.put("telegramChatId", ""); merged.put("telegramThreadId", "");
         }
         return Json.MAPPER.treeToValue(merged, AppConfig.class);
+    }
+    private static Map<String, java.math.BigDecimal> parsePrices(JsonNode input) {
+        if (!input.isObject() || input.size() > 10000) throw new IllegalArgumentException("单价映射应为 JSON 对象，最多 10000 项。");
+        Map<String, java.math.BigDecimal> prices = new java.util.LinkedHashMap<>();
+        var entries = input.fields();
+        while (entries.hasNext()) {
+            var entry = entries.next();
+            JsonNode value = entry.getValue();
+            if (!(value.isNumber() || value.isTextual()) || value.asText().isBlank())
+                throw new IllegalArgumentException("单价必须为非负数字或十进制字符串，不能为 null、空串、布尔值或对象。");
+            try { prices.put(entry.getKey(), new java.math.BigDecimal(value.asText().trim())); }
+            catch (NumberFormatException e) { throw new IllegalArgumentException("单价必须为有效的非负数字或十进制字符串。"); }
+        }
+        AppConfig.validatePrices(prices);
+        return prices;
     }
     private Map<String, TelegramBotConfig> storedBotsById() {
         Map<String, TelegramBotConfig> bots = new HashMap<>();
@@ -165,6 +186,9 @@ public final class ConfigStore {
         return publicConfig();
     }
     public synchronized Map<String,Object> mappings() {
-        return Map.of("channelNames", Map.copyOf(stored.channelNames), "workflowNames", Map.copyOf(stored.workflowNames));
+        Map<String,String> prices = new java.util.LinkedHashMap<>();
+        stored.taskTypePrices.forEach((key, price) -> prices.put(key, price.stripTrailingZeros().toPlainString()));
+        return Map.of("channelNames", Map.copyOf(stored.channelNames), "workflowNames", Map.copyOf(stored.workflowNames),
+                "taskTypePrices", prices, "amountsEnabled", stored.amountsEnabled);
     }
 }

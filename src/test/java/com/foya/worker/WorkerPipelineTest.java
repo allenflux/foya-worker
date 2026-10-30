@@ -82,11 +82,13 @@ class WorkerPipelineTest {
                  WebServer web = new WebServer(worker, "127.0.0.1", 0)) {
                 web.start();
                 String base = "http://127.0.0.1:" + web.port();
-                Map<String, Object> config = Map.of("p0Endpoint", upstreamBase + "/api/tasks/list", "p0TimeFormat", "datetime",
+                Map<String, Object> config = new HashMap<>(Map.of("p0Endpoint", upstreamBase + "/api/tasks/list", "p0TimeFormat", "datetime",
                         "timezone", "Asia/Shanghai", "p0ApiKey", "", "telegramBotToken", TOKEN,
                         "telegramChatId", "-100987654321", "reportDays", 2, "amountsEnabled", true,
                         "channelNames", Map.of("hash_a", "渠道甲", "hash_b", "渠道乙", "hash_old", "前日渠道"),
-                        "workflowNames", Map.of("workflow_a", "图像编辑", "workflow_b", "视频处理", "workflow_old", "前日工作流"));
+                        "workflowNames", Map.of("workflow_a", "图像编辑", "workflow_b", "视频处理", "workflow_old", "前日工作流")));
+                config.put("taskTypePrices", Map.of("workflow_a", new BigDecimal("2.50"),
+                        "workflow_b", new BigDecimal("1.25"), "workflow_old", BigDecimal.ONE));
                 assertEquals(200, request(base, "PUT", "/api/config", config).statusCode());
                 assertEquals(202, request(base, "POST", "/api/pull", Map.of("endDate", latest.toString())).statusCode());
                 awaitCompletedJob(base);

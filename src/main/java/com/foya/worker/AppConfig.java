@@ -34,6 +34,7 @@ public class AppConfig {
     public int llmTimeoutSeconds = 20;
     public Map<String, String> channelNames = new LinkedHashMap<>();
     public Map<String, String> workflowNames = new LinkedHashMap<>();
+    public Map<String, java.math.BigDecimal> taskTypePrices = new LinkedHashMap<>();
 
     public void validate() {
         try {
@@ -70,6 +71,7 @@ public class AppConfig {
                     throw new IllegalArgumentException("映射名称不能为空，键和值最多 256 个字符。");
             }
         }
+        validatePrices(taskTypePrices);
         if (!telegramChatId.isBlank() && !telegramChatId.matches("-?\\d+|@[A-Za-z0-9_]{5,}")) throw new IllegalArgumentException("Chat ID 应为数字或 @频道用户名。");
         if (!telegramThreadId.isBlank() && !telegramThreadId.matches("[1-9]\\d{0,9}")) throw new IllegalArgumentException("话题 ID 应为正整数。");
         if (telegramBots == null || telegramBots.size() > 50) throw new IllegalArgumentException("最多可配置 50 个 Telegram 机器人。");
@@ -84,5 +86,16 @@ public class AppConfig {
                 && telegramBotToken.matches("[0-9]+:[A-Za-z0-9_-]+");
         if (scheduleEnabled && !readyBot && !legacyReady)
             throw new IllegalArgumentException("启用定时发送前，请配置至少一个已启用机器人的有效 Token，并启用自动发现聊天或填写 Chat ID。");
+    }
+
+    public static void validatePrices(Map<String, java.math.BigDecimal> prices) {
+        if (prices == null || prices.size() > 10000) throw new IllegalArgumentException("单价映射应为 JSON 对象，最多 10000 项。");
+        for (var entry : prices.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getKey().length() > 256 || entry.getKey().matches("(?s).*[\\p{Cc}].*"))
+                throw new IllegalArgumentException("单价映射的 task_type 不能为空，最多 256 字符且不能含控制字符。");
+            java.math.BigDecimal price = entry.getValue();
+            if (price == null || price.signum() < 0 || price.scale() > 12 || price.precision() > 30 || (long) price.precision() - price.scale() > 18)
+                throw new IllegalArgumentException("单价必须为非负数字，最多 18 位整数和 12 位小数；免费类型可填 0。");
+        }
     }
 }

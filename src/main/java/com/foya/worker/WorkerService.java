@@ -86,6 +86,7 @@ public final class WorkerService implements AutoCloseable {
         result.put("feeComplete", report.amountsEnabled() && report.missingFeeCount() == 0);
         result.put("latestFeeComplete", report.amountsEnabled() && report.daily().getFirst().missingFeeCount == 0);
         result.put("amountsEnabled", report.amountsEnabled());
+        result.put("amountSource", report.amountsEnabled() ? "task_type_price" : "disabled");
         result.put("missingFeeCount", report.missingFeeCount());
         result.put("channelsBy", report.channelsBy());
         return result;
@@ -282,7 +283,7 @@ public final class WorkerService implements AutoCloseable {
                 if (previous != null && previous.created().plusSeconds(ttl).isAfter(Instant.now())) return previous;
                 Map<String,Object> metrics = new LinkedHashMap<>();
                 Map<String,Object> base = response(report);
-                for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee", "amountsEnabled", "feeComplete", "latestFeeComplete", "missingFeeCount", "channelsBy")) metrics.put(field, base.get(field));
+                for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee", "amountsEnabled", "amountSource", "feeComplete", "latestFeeComplete", "missingFeeCount", "channelsBy")) metrics.put(field, base.get(field));
                 metrics.put("timezone", config.timezone);
                 metrics.put("channelsTop10", rankings(report.channels().stream().limit(10).toList(), report.amountsEnabled()));
                 metrics.put("workflowsTop10", rankings(report.workflows().stream().limit(10).toList(), report.amountsEnabled()));

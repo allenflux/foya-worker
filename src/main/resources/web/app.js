@@ -7,7 +7,8 @@ const viewNames = {overview:'统计概览',settings:'机器人配置',mappings:'
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value) => value == null ? '—' : numberFormat.format(Number(value));
-const money = (value) => value == null ? '未统计' : number(value);
+const moneyFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:12});
+const money = (value) => value == null ? '未统计' : moneyFormat.format(Number(value));
 const displayDate = (date) => typeof date === 'string' ? date.slice(5).replace('-', '/') : '—';
 const icon = (name, className='') => `<svg class="${className}"><use href="#i-${name}"/></svg>`;
 const showModal = (selector) => bootstrap.Modal.getOrCreateInstance($(selector)).show();
@@ -256,13 +257,13 @@ function renderReport(report) {
   const amountsPaused = report?.amountsEnabled !== true;
   $('#metric-count').textContent = number(report?.latestCount);
   $('#metric-fee').textContent = money(amountsPaused ? null : report?.latestFee);
-  $('#metric-fee-note').textContent = amountsPaused ? '金额暂未统计' : (report.latestFeeComplete === false || report.latestFee == null ? '部分金额未统计，单数统计正常' : '金额汇总');
+  $('#metric-fee-note').textContent = amountsPaused ? '金额暂未统计' : (report.latestFeeComplete === false || report.latestFee == null ? '部分任务未配置单价' : '按成功单数 × 单价汇总');
   const byCount = amountsPaused || report?.channelsBy === 'count';
   $('#channel-sort-note').textContent = `最新统计日 · 按${byCount ? '单数' : '金额'}降序`;
   $('#channel-share-heading').textContent = `${byCount ? '单数' : '金额'}占比`;
   const incompleteFees = Boolean(report && (report.feeComplete === false || Number(report.missingFeeCount) > 0));
   $('#fee-notice').classList.toggle('hidden',!amountsPaused && !incompleteFees);
-  $('#fee-notice').textContent = amountsPaused ? '金额暂未统计，渠道按单数排名' : (incompleteFees ? `${Number(report.missingFeeCount) > 0 ? `有 ${number(report.missingFeeCount)} 单` : '部分任务'}金额未统计，单数统计正常。${byCount ? '渠道按单数排名。' : ''}` : '');
+  $('#fee-notice').textContent = amountsPaused ? '金额暂未统计，渠道按单数排名' : (incompleteFees ? `${Number(report.missingFeeCount) > 0 ? `${number(report.missingFeeCount)} 单未配置单价` : '部分任务未配置单价'}，金额未统计，单数统计正常。${byCount ? '渠道按单数排名。' : ''}` : '');
   $('#metric-total').textContent = number(report?.totalCount);
   $('#metric-count-note').textContent = report ? `${displayDate(report.endDate)} · 成功任务` : '等待拉取数据';
   $('#data-period').textContent = report ? `${displayDate(report.startDate)} — ${displayDate(report.endDate)}` : '—';
@@ -387,11 +388,65 @@ function parseMap(text,name) {
   if (!result || Array.isArray(result) || typeof result !== 'object' || Object.values(result).some((value) => typeof value !== 'string')) throw new Error(`${name}应为键和值均为字符串的 JSON 对象。`);
   return result;
 }
+// Keep JSON number literals exact before they reach JavaScript's binary Number representation.
+function parsePriceJson(text) {
+  let output='',quoted=false,escaped=false,previous='';
+  for (let index=0;index<text.length;index++) {
+    const character=text[index];
+    if (quoted) {
+      output+=character;
+      if (escaped) escaped=false;
+      else if (character==='\\') escaped=true;
+      else if (character==='"') {quoted=false;previous='"';}
+      continue;
+    }
+    if (character==='"') {quoted=true;output+=character;continue;}
+    if (previous===':' && /[\d-]/.test(character)) {
+      const literal=/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(index));
+      if (literal) {output+=JSON.stringify(literal[0]);index+=literal[0].length-1;previous='n';continue;}
+    }
+    output+=character;
+    if (!/\s/.test(character)) previous=character;
+  }
+  return JSON.parse(output);
+}
+
+function parsePriceMap(text) {
+  let result;
+  try {result = parsePriceJson(text);} catch {throw new Error('单价映射 JSON 格式不正确，请检查逗号和引号。');}
+  if (!result || Array.isArray(result) || typeof result !== 'object') throw new Error('单价映射应为 task_type 到单价的 JSON 对象。');
+  const entries = Object.entries(result);
+  if (entries.length > 10000) throw new Error('单价映射最多支持 10000 项。');
+  for (const [key,value] of entries) {
+    if (!key.trim()) throw new Error('单价映射的 task_type 不能为空。');
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || value < 0) throw new Error('单价必须是非负有限数字，允许 0。');
+    } else if (typeof value === 'string') {
+      const decimal = value.trim();
+      if (!decimal || !/^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(decimal)) throw new Error('单价字符串必须是非负十进制数，不能留空。');
+      result[key] = decimal;
+    } else throw new Error('单价只能是非负数字或十进制字符串，不能是布尔值、null、数组或对象。');
+  }
+  return result;
+}
+
+function mappingPayload() {
+  return {channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射'),taskTypePrices:parsePriceMap($('#price-map').value),amountsEnabled:$('#amounts-enabled').checked};
+}
+
+function updatePriceCount() {
+  try {$('#price-map-count').textContent = `${Object.keys(parsePriceMap($('#price-map').value)).length} 条`;}
+  catch {$('#price-map-count').textContent = '待校验';}
+}
+
 function renderMappings(mappings) {
   $('#channel-map').value=JSON.stringify(mappings.channelNames || {},null,2);
   $('#workflow-map').value=JSON.stringify(mappings.workflowNames || {},null,2);
   $('#channel-map-count').textContent=Object.keys(mappings.channelNames || {}).length;
   $('#workflow-map-count').textContent=Object.keys(mappings.workflowNames || {}).length;
+  $('#price-map').value=JSON.stringify(mappings.taskTypePrices || {},null,2);
+  $('#amounts-enabled').checked=Boolean(mappings.amountsEnabled);
+  updatePriceCount();
 }
 
 
@@ -425,7 +480,14 @@ $('#config-form').addEventListener('submit',(event) => {
 });
 $('#mapping-form').addEventListener('submit',(event) => {
   event.preventDefault();
-  withButton('#save-mappings',async () => {const payload={channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射')};const result=await api('/api/mappings',{method:'PUT',body:JSON.stringify(payload)});renderMappings(result);toast('名称映射已保存。');await loadReport({silent:true});},'正在保存');
+  withButton('#save-mappings',async () => {
+    const result=await api('/api/mappings',{method:'PUT',body:JSON.stringify(mappingPayload())});
+    renderMappings(result);state.summary=null;
+    if (state.config) state.config={...state.config,amountsEnabled:Boolean(result.amountsEnabled)};
+    try {const config=await api('/api/config');if(state.config) state.config={...state.config,amountsEnabled:Boolean(config.amountsEnabled)};}
+    catch(error) {handleError(error,'刷新金额配置');}
+    await loadReport({silent:true});toast('映射配置已保存。');
+  },'正在保存');
 });
 $('#pull-button').addEventListener('click',() => withButton('#pull-button',async () => {
   await api('/api/pull',{method:'POST',body:JSON.stringify({endDate:$('#end-date').value,force:false})});
@@ -483,7 +545,7 @@ $('#export-config').addEventListener('click',() => {
   downloadJson('aiapi-config.json',safe);toast('已导出配置，不包含 P0、Telegram 或模型密钥。');
 });
 $('#export-mappings').addEventListener('click',() => {
-  try {downloadJson('aiapi-mappings.json',{channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射')});} catch(error){handleError(error,'导出名称映射');}
+  try {downloadJson('aiapi-mappings.json',mappingPayload());} catch(error){handleError(error,'导出映射配置');}
 });
 for(const [inputId,textareaId,label,key] of [['import-channels','channel-map','渠道映射','channelNames'],['import-workflows','workflow-map','工作流映射','workflowNames']]) {
   $(`#${inputId}`).addEventListener('change',async(event) => {
@@ -491,6 +553,25 @@ for(const [inputId,textareaId,label,key] of [['import-channels','channel-map','�
     try {if(file.size>2*1024*1024) throw new Error('映射文件不能超过 2 MB。');const raw=JSON.parse(await file.text());const data=raw[key] || raw;const parsed=parseMap(JSON.stringify(data),label);$(`#${textareaId}`).value=JSON.stringify(parsed,null,2);toast(`已导入 ${Object.keys(parsed).length} 个名称，请保存映射。`);} catch(error){handleError(error instanceof SyntaxError ? new Error('文件不是有效的 JSON。') : error,'导入名称映射');} finally{event.target.value='';}
   });
 }
+$('#price-map').addEventListener('input',updatePriceCount);
+$('#export-prices').addEventListener('click',() => {
+  try {downloadJson('aiapi-task-prices.json',{amountsEnabled:$('#amounts-enabled').checked,taskTypePrices:parsePriceMap($('#price-map').value)});}
+  catch(error) {handleError(error,'导出单价映射');}
+});
+$('#import-prices').addEventListener('change',async(event) => {
+  const file=event.target.files[0];if(!file) return;
+  try {
+    if (file.size>2*1024*1024) throw new Error('单价映射文件不能超过 2 MB。');
+    const raw=parsePriceJson(await file.text());
+    const wrapped=raw && typeof raw==='object' && !Array.isArray(raw) && Object.hasOwn(raw,'taskTypePrices');
+    const prices=parsePriceMap(JSON.stringify(wrapped ? raw.taskTypePrices : raw));
+    if (wrapped && Object.hasOwn(raw,'amountsEnabled') && typeof raw.amountsEnabled!=='boolean') throw new Error('amountsEnabled 必须是 true 或 false。');
+    $('#price-map').value=JSON.stringify(prices,null,2);
+    if (wrapped && Object.hasOwn(raw,'amountsEnabled')) $('#amounts-enabled').checked=raw.amountsEnabled;
+    updatePriceCount();toast(`已导入 ${Object.keys(prices).length} 条单价，请保存映射配置。`);
+  } catch(error) {handleError(error instanceof SyntaxError ? new Error('文件不是有效的 JSON。') : error,'导入单价映射');}
+  finally {event.target.value='';}
+});
 $('#copy-error').addEventListener('click',async () => {
   if (!state.persistentError) return;
   try {await copyText(state.persistentError.text);toast('脱敏错误详情已复制，可直接粘贴反馈。');}

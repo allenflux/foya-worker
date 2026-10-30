@@ -32,6 +32,7 @@ class ReportServiceTest {
         config.reportDays = 10;
         config.channelNames.put("h0", "瑞升-原嘉华");
         config.workflowNames.put("w0", "图片换脸");
+        for (int n = 0; n < 12; n++) config.taskTypePrices.put("w" + n, new BigDecimal("1000.01"));
         List<DailyStats> days = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             DailyStats day = new DailyStats();
@@ -50,7 +51,8 @@ class ReportServiceTest {
         assertTrue(report.text().contains("【渠道TOP10】10/29 按金额降序：渠道｜单数｜金额｜占比\n1. 瑞升-原嘉华｜12｜12,000.12｜15.4%"));
         assertTrue(report.text().contains("其他渠道（2）｜3｜3,000.03｜3.8%"));
         assertTrue(report.text().contains("【工作流 TOP10】10/29：工作流｜单数｜占比\n1. 图片换脸｜12｜15.4%"));
-        assertTrue(report.text().endsWith("其余 2 项合计｜3｜3.8%"));
+        assertTrue(report.text().contains("其余 2 项合计｜3｜3.8%"));
+        assertTrue(report.text().endsWith("金额按 task_type 单价映射计算"));
         assertEquals(12, report.channels().size());
         assertEquals("2026-10-20", report.startDate());
         assertEquals("2026-10-29", report.endDate());
@@ -76,12 +78,14 @@ class ReportServiceTest {
         config.reportDays = 1;
         config.channelNames.put("a", "相同名称");
         config.channelNames.put("b", "相同名称");
+        config.taskTypePrices.put("0", new BigDecimal("1"));
+        config.taskTypePrices.put("1", new BigDecimal("2"));
         DailyStats day = new DailyStats();
         day.date = "2026-10-29";
         day.totalCount = 2;
         day.totalFee = new BigDecimal("3");
         day.buckets.add(new DailyStats.Bucket("a", "0", 1, new BigDecimal("1")));
-        day.buckets.add(new DailyStats.Bucket("b", "0", 1, new BigDecimal("2")));
+        day.buckets.add(new DailyStats.Bucket("b", "1", 1, new BigDecimal("2")));
         var report = new ReportService().build(config, List.of(day));
         assertEquals(2, report.channels().size());
         assertEquals("66.7", report.channels().getFirst().percent().toPlainString());

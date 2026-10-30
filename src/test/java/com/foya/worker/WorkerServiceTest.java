@@ -47,7 +47,7 @@ class WorkerServiceTest {
     @SuppressWarnings("unchecked")
     void mappingUpdatesReuseRawCacheAndResponseSharesArePercentValues() throws Exception {
         try (WorkerService service = new WorkerService(directory)) {
-            service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1, "amountsEnabled", true)));
+            service.configs.update(Json.MAPPER.valueToTree(Map.of("reportDays", 1, "amountsEnabled", true, "taskTypePrices", Map.of("workflow_a", new BigDecimal("25.00"), "workflow_b", new BigDecimal("25.25")))));
             cacheDay(service.configs.snapshot(), END_DATE);
             Path cache = directory.resolve("cache").resolve(END_DATE + ".json");
             byte[] before = Files.readAllBytes(cache);
@@ -62,11 +62,11 @@ class WorkerServiceTest {
             List<Map<String, Object>> channels = (List<Map<String, Object>>) response.get("channels");
             List<Map<String, Object>> workflows = (List<Map<String, Object>>) response.get("workflows");
             assertEquals("渠道甲", channels.getFirst().get("name"));
-            assertEquals(new BigDecimal("75.1"), channels.getFirst().get("share"));
+            assertEquals(new BigDecimal("74.8"), channels.getFirst().get("share"));
             assertEquals("图像编辑", workflows.getFirst().get("name"));
             assertEquals(new BigDecimal("75.0"), workflows.getFirst().get("share"));
             assertTrue(response.get("text").toString().contains("AIAPI 日统计｜10/29–10/29（1天）"));
-            assertTrue(response.get("text").toString().contains("渠道甲｜3｜75.25｜75.1%"));
+            assertTrue(response.get("text").toString().contains("渠道甲｜3｜75｜74.8%"));
             assertTrue(response.get("text").toString().contains("图像编辑｜3｜75.0%"));
             assertEquals(END_DATE.toString(), response.get("startDate"));
             assertEquals(END_DATE.toString(), response.get("endDate"));

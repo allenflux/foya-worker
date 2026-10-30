@@ -59,9 +59,18 @@ public final class WebServer implements AutoCloseable {
                 case "GET /api/mappings" -> json(exchange, 200, worker.configs.mappings());
                 case "PUT /api/mappings" -> {
                     JsonNode input = body(exchange);
-                    if (!input.isObject() || !input.path("channelNames").isObject() || !input.path("workflowNames").isObject()) throw new IllegalArgumentException("渠道和工作流映射应为 JSON 对象。");
-                    worker.configs.update(Json.MAPPER.createObjectNode().setAll(Map.of("channelNames", input.get("channelNames"), "workflowNames", input.get("workflowNames"))));
-                    worker.jobs.log("info", "渠道和工作流映射已更新"); json(exchange, 200, worker.configs.mappings());
+                    if (worker.jobs.isRunning()) throw new IllegalStateException("任务运行期间请等待完成后修改映射配置。");
+                    if (!input.isObject()) throw new IllegalArgumentException("映射配置应为 JSON 对象。");
+                    var updates = Json.MAPPER.createObjectNode();
+                    for (String field : java.util.List.of("channelNames", "workflowNames", "taskTypePrices", "amountsEnabled")) {
+                        if (!input.has(field)) continue;
+                        if (!field.equals("amountsEnabled") && !input.get(field).isObject())
+                            throw new IllegalArgumentException("名称和单价映射应为 JSON 对象。");
+                        updates.set(field, input.get(field));
+                    }
+                    if (updates.isEmpty()) throw new IllegalArgumentException("请提供名称映射、单价映射或金额统计开关。");
+                    worker.configs.update(updates);
+                    worker.jobs.log("info", "名称、单价映射及金额统计配置已更新"); json(exchange, 200, worker.configs.mappings());
                 }
                 case "GET /api/status" -> json(exchange, 200, worker.status());
                 case "GET /api/report" -> json(exchange, 200, worker.reportResponse(worker.endDate(query(exchange, "endDate"))));

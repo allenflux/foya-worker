@@ -62,10 +62,10 @@ class P0OptionalFeeTest {
             assertEquals(168, cached.missingFeeCount);
             ReportService.Report report = new ReportService().build(config, List.of(cached));
             assertEquals("count", report.channelsBy());
-            assertEquals(168, report.missingFeeCount());
+            assertEquals(216, report.missingFeeCount(), "No unit prices are configured, regardless of upstream fee availability");
             assertTrue(report.text().contains("01/02｜216｜未统计"));
             assertTrue(report.text().contains("1. all｜216｜未统计｜100.0%"));
-            assertTrue(report.text().contains("金额字段未提供/无效：168单；单数统计正常"));
+            assertTrue(report.text().contains("有216单未配置单价，相关金额未统计；单数统计正常"));
             Map<String, Object> probe = new P0Client().testConnection(config);
             assertEquals(true, probe.get("ok"));
             assertEquals(7L, probe.get("missingFeeCount"));
@@ -75,9 +75,10 @@ class P0OptionalFeeTest {
 
     @Test void incompleteLatestDayRanksByCountsAndNeverPresentsKnownSubtotalAsCompleteAmount() {
         AppConfig config = new AppConfig(); config.reportDays = 1; config.amountsEnabled = true;
+        config.taskTypePrices.put("edit", new BigDecimal("100"));
         DailyStats day = day("2026-10-29");
         day.buckets.add(new DailyStats.Bucket("money", "edit", 1, new BigDecimal("100")));
-        day.buckets.add(new DailyStats.Bucket("unknown", "edit", 2, BigDecimal.ZERO, 2));
+        day.buckets.add(new DailyStats.Bucket("unknown", "unmapped", 2, BigDecimal.ZERO, 2));
         day.totalCount = 3; day.totalFee = new BigDecimal("100"); day.missingFeeCount = 2;
         ReportService.Report report = new ReportService().build(config, List.of(day));
         assertEquals("count", report.channelsBy());
@@ -88,8 +89,8 @@ class P0OptionalFeeTest {
         assertTrue(report.text().contains("10/29｜3｜未统计"));
         assertTrue(report.text().contains("1. unknown｜2｜未统计｜66.7%"));
         assertTrue(report.text().contains("2. money｜1｜100｜33.3%"));
-        assertEquals(3, report.workflows().getFirst().count());
-        assertEquals(new BigDecimal("100.0"), report.workflows().getFirst().percent());
+        assertEquals(2, report.workflows().getFirst().count());
+        assertEquals(new BigDecimal("66.7"), report.workflows().getFirst().percent());
     }
 
     @Test void otherChannelsWithAnyUnknownFeeShowUnavailableAndCountShare() {
@@ -99,7 +100,8 @@ class P0OptionalFeeTest {
             long count = 12 - i;
             long missing = i == 11 ? 1 : 0;
             BigDecimal fee = missing > 0 ? BigDecimal.ZERO : BigDecimal.valueOf(count * 100);
-            day.buckets.add(new DailyStats.Bucket("channel" + i, "edit", count, fee, missing));
+            day.buckets.add(new DailyStats.Bucket("channel" + i, "workflow" + i, count, fee, missing));
+            if (missing == 0) config.taskTypePrices.put("workflow" + i, new BigDecimal("100"));
             day.totalCount += count; day.totalFee = day.totalFee.add(fee); day.missingFeeCount += missing;
         }
         var report = new ReportService().build(config, List.of(day));
@@ -108,9 +110,11 @@ class P0OptionalFeeTest {
 
     @Test void previousUnknownDayDoesNotChangeCompleteLatestDaysFeeRanking() {
         AppConfig config = new AppConfig(); config.reportDays = 2; config.amountsEnabled = true;
+        config.taskTypePrices.put("high", new BigDecimal("100"));
+        config.taskTypePrices.put("low", new BigDecimal("10"));
         DailyStats latest = day("2026-10-29");
-        latest.buckets.add(new DailyStats.Bucket("few-high-fee", "edit", 1, new BigDecimal("100")));
-        latest.buckets.add(new DailyStats.Bucket("many-low-fee", "edit", 3, new BigDecimal("30")));
+        latest.buckets.add(new DailyStats.Bucket("few-high-fee", "high", 1, new BigDecimal("100")));
+        latest.buckets.add(new DailyStats.Bucket("many-low-fee", "low", 3, new BigDecimal("30")));
         latest.totalCount = 4; latest.totalFee = new BigDecimal("130");
         DailyStats previous = day("2026-10-28");
         previous.buckets.add(new DailyStats.Bucket("old", "edit", 2, BigDecimal.ZERO, 2));

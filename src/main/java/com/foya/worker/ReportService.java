@@ -31,7 +31,8 @@ public final class ReportService {
 
     public Report build(AppConfig config, List<DailyStats> supplied) {
         if (supplied == null || supplied.isEmpty()) throw new IllegalArgumentException("尚无缓存，请先拉取完整统计日期");
-        List<DailyStats> days = supplied.stream().sorted(Comparator.comparing((DailyStats d) -> d.date).reversed()).toList();
+        List<DailyStats> days = supplied.stream().sorted(Comparator.comparing((DailyStats d) -> d.date).reversed())
+                .map(day -> reportDay(config, day)).toList();
         if (days.size() != config.reportDays) throw new IllegalArgumentException("报表需要连续 " + config.reportDays + " 天完整缓存，当前仅 " + days.size() + " 天");
         LocalDate end = LocalDate.parse(days.getFirst().date);
         for (int i = 0; i < days.size(); i++) if (!days.get(i).date.equals(end.minusDays(i).toString()))
@@ -94,9 +95,38 @@ public final class ReportService {
         }
         long missingFeeCount = days.stream().mapToLong(day -> day.missingFeeCount).sum();
         if (!amountsEnabled) text.append("金额暂未统计，渠道按单数排名。\n");
-        else if (missingFeeCount > 0) text.append("金额字段未提供/无效：").append(number(missingFeeCount)).append("单；单数统计正常\n");
+        else {
+            text.append("金额按 task_type 单价映射计算\n");
+            if (missingFeeCount > 0) text.append("有").append(number(missingFeeCount)).append("单未配置单价，相关金额未统计；单数统计正常\n");
+        }
         return new Report(first.toString(), end.toString(), days.size(), text.toString().stripTrailing(), days,
                 channelRanking, workflowRanking, rankByFee ? "fee" : "count", missingFeeCount, amountsEnabled);
+    }
+
+    /** Build an isolated view; persisted source aggregates are never priced or modified in place. */
+    private static DailyStats reportDay(AppConfig config, DailyStats source) {
+        DailyStats view = new DailyStats();
+        view.schemaVersion = source.schemaVersion;
+        view.date = source.date; view.timezone = source.timezone; view.fetchedAt = source.fetchedAt;
+        view.sourceFingerprint = source.sourceFingerprint; view.requestCount = source.requestCount;
+        view.totalCount = source.totalCount;
+        view.feeWarnings = source.feeWarnings == null ? new ArrayList<>() : new ArrayList<>(source.feeWarnings);
+        if (!config.amountsEnabled) {
+            view.totalFee = source.totalFee; view.missingFeeCount = source.missingFeeCount;
+            for (DailyStats.Bucket bucket : source.buckets)
+                view.buckets.add(new DailyStats.Bucket(bucket.hashKey(), bucket.taskType(), bucket.count(), bucket.fee(), bucket.missingFeeCount()));
+            return view;
+        }
+        for (DailyStats.Bucket bucket : source.buckets) {
+            BigDecimal price = config.taskTypePrices == null ? null : config.taskTypePrices.get(bucket.taskType());
+            if (price != null && price.signum() < 0) throw new IllegalArgumentException("工作流单价不能为负数");
+            BigDecimal fee = price == null ? BigDecimal.ZERO : price.multiply(BigDecimal.valueOf(bucket.count()));
+            long missing = price == null ? bucket.count() : 0;
+            view.buckets.add(new DailyStats.Bucket(bucket.hashKey(), bucket.taskType(), bucket.count(), fee, missing));
+            view.totalFee = view.totalFee.add(fee);
+            view.missingFeeCount += missing;
+        }
+        return view;
     }
 
     private static String channelName(String key, AppConfig config) {
