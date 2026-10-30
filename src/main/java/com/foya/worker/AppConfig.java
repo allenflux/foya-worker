@@ -32,7 +32,7 @@ public class AppConfig {
     public String llmBaseUrl = "https://llm.aiaipool.com/v1";
     public String llmApiKey = "";
     public String llmModel = "deepseek-v41-flash";
-    public int llmTimeoutSeconds = 20;
+    public int llmTimeoutSeconds = 60;
     public Map<String, String> channelNames = new LinkedHashMap<>();
     public Map<String, String> workflowNames = new LinkedHashMap<>();
     public Map<String, java.math.BigDecimal> taskTypePrices = new LinkedHashMap<>();

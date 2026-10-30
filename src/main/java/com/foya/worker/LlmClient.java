@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 /** Optional aggregate-only analysis. Failure never prevents delivery of the source statistics. */
 public final class LlmClient {
     private static final int MAX_SUMMARY_CHARS = 1600;
+    // Reasoning tokens share the provider's output budget, before the concise final answer.
+    private static final int MAX_COMPLETION_TOKENS = 4096;
     private static final String SYSTEM_PROMPT = "你是中文运营统计分析助手。用户消息仅为日报及渠道、工作流 TOP10 的汇总 JSON。"
             + "请输出简短的 3–5 条中文观察，必要时可少于 3 条。每个数字和比较都必须能从所给汇总数据直接验证；"
             + "不得猜测业务原因、补全缺失数据、编造趋势或作收益承诺。数据不足时明确说明。"
@@ -76,7 +78,7 @@ public final class LlmClient {
             long deadline = System.nanoTime() + budget.toNanos();
             String payload = Json.MAPPER.writeValueAsString(Map.of("model", model,
                     "messages", List.of(Map.of("role", "system", "content", system), Map.of("role", "user", "content", user)),
-                    "temperature", 0.2, "max_tokens", 600, "stream", false));
+                    "temperature", 0.2, "max_tokens", MAX_COMPLETION_TOKENS, "stream", false));
             for (int attempt = 0; attempt < 2; attempt++) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) return failed("AI 总结生成超时，日报统计照常保留。");
@@ -129,8 +131,13 @@ public final class LlmClient {
                 try { root = Json.MAPPER.readTree(response.body()); }
                 catch (Exception e) { return failed("LLM 返回格式异常，日报统计照常保留。"); }
                 if (root == null || root.hasNonNull("error")) return failed("LLM 返回业务错误，日报统计照常保留。");
-                JsonNode content = root.path("choices").path(0).path("message").path("content");
-                if (!content.isTextual() || content.textValue().isBlank()) return failed("LLM 未返回有效总结，日报统计照常保留。");
+                JsonNode choice = root.path("choices").path(0);
+                JsonNode content = choice.path("message").path("content");
+                if (!content.isTextual() || content.textValue().isBlank()) {
+                    if ("length".equals(choice.path("finish_reason").asText()))
+                        return failed("LLM 输出额度耗尽，未生成有效总结；日报统计照常保留。");
+                    return failed("LLM 未返回有效总结，日报统计照常保留。");
+                }
                 String text = redact(content.textValue().strip(), key);
                 if (text.length() > MAX_SUMMARY_CHARS) {
                     int limit = MAX_SUMMARY_CHARS;

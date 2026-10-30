@@ -279,7 +279,8 @@ public final class WorkerService implements AutoCloseable {
     private Map<String,Object> summaryResponse(AppConfig config, ReportService.Report report) {
         LlmClient.Summary summary;
         try {
-            String cacheKey = digest(report.text() + "\n" + config.llmEnabled + "\n" + config.llmBaseUrl + "\n" + config.llmModel + "\n" + config.llmApiKey);
+            String cacheKey = digest(report.text() + "\n" + config.llmEnabled + "\n" + config.llmBaseUrl + "\n" + config.llmModel
+                    + "\n" + config.llmApiKey + "\n" + config.llmTimeoutSeconds);
             if (summaryCache.size() >= 100) summaryCache.clear();
             CachedSummary cached = summaryCache.compute(cacheKey, (ignored, previous) -> {
                 long ttl = previous != null && "success".equals(previous.value().status()) ? 86400 : 60;

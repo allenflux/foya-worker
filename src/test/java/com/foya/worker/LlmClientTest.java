@@ -74,7 +74,7 @@ class LlmClientTest {
         assertEquals(List.of("Bearer " + API_KEY), authHeaders);
         JsonNode body = requests.getFirst();
         assertEquals("deepseek-v41-flash", body.path("model").asText());
-        assertEquals(600, body.path("max_tokens").asInt());
+        assertEquals(4096, body.path("max_tokens").asInt(), "reserve output budget for reasoning before the final summary");
         assertEquals(0.2, body.path("temperature").asDouble());
         assertFalse(body.path("stream").asBoolean());
         assertEquals("system", body.path("messages").get(0).path("role").asText());
@@ -127,6 +127,25 @@ class LlmClientTest {
         assertEquals("failed", malformed.status());
         assertEquals(2, attempts.get(), "invalid completions must not be retried");
         assertFalse(malformed.toString().contains(API_KEY));
+    }
+
+    @Test
+    void reasoningOnlyOutputAtTokenLimitReportsExhaustionWithoutPublishingReasoning() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        AppConfig config = start(exchange -> {
+            attempts.incrementAndGet();
+            reply(exchange, 200, Json.MAPPER.writeValueAsString(Map.of(
+                    "choices", List.of(Map.of("finish_reason", "length", "message", Map.of(
+                            "content", "", "reasoning_content", "PRIVATE_REASONING_MUST_NOT_BECOME_THE_SUMMARY"))),
+                    "usage", Map.of("completion_tokens", 4096,
+                            "completion_tokens_details", Map.of("reasoning_tokens", 4096)))));
+        });
+        var result = new LlmClient().summarize(config, Map.of("count", 4));
+        assertEquals("failed", result.status());
+        assertEquals("", result.text());
+        assertEquals("LLM 输出额度耗尽，未生成有效总结；日报统计照常保留。", result.message());
+        assertEquals(1, attempts.get(), "a completed but exhausted generation must not spend the budget again");
+        assertFalse(result.toString().contains("PRIVATE_REASONING"));
     }
 
     @Test
