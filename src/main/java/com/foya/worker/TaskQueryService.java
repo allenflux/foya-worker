@@ -29,6 +29,28 @@ public final class TaskQueryService {
 
     record Window(ZonedDateTime start, ZonedDateTime end, Map<String, String> filters) {}
     record Page(List<JsonNode> rows, Long total, Boolean hasMore, int pageSize) {}
+    private static final int DIAGNOSTIC_RECORDS_PER_STATUS = 500;
+    private static final List<Integer> DIAGNOSTIC_STATUSES = List.of(-1, 0, 1, 3);
+    private static final class DiagnosticSample {
+        final List<JsonNode> rows = new ArrayList<>();
+        Long expectedCount;
+        boolean complete;
+        boolean truncated;
+        String error;
+
+        synchronized List<JsonNode> rows() { return List.copyOf(rows); }
+        synchronized Map<String,Object> coverage() {
+            Map<String,Object> value = new LinkedHashMap<>();
+            value.put("fetchedCount", rows.size()); value.put("expectedCount", expectedCount);
+            value.put("complete", complete); value.put("truncated", truncated);
+            if (error != null) value.put("error", error);
+            return value;
+        }
+        synchronized void failed() {
+            complete = false;
+            error = "该状态诊断数据未完整读取，可缩短时间段后重试。";
+        }
+    }
 
     public Map<String, Object> list(AppConfig config, Map<String, String> params) throws Exception {
         long deadline = System.nanoTime() + budget.toNanos();
@@ -107,6 +129,112 @@ public final class TaskQueryService {
                 pending.values().forEach(f -> f.cancel(true));
             }
         }
+    }
+
+    /** Bounded drill-down of non-success tasks; source rows are never returned by this endpoint. */
+    public Map<String,Object> diagnostics(AppConfig config, Map<String,String> params) throws Exception {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        long deadline = System.nanoTime() + budget.toNanos();
+        Window window = window(config, params);
+        String apiKey = P0Client.resolveApiKey(config);
+        Map<Integer,DiagnosticSample> samples = new LinkedHashMap<>();
+        Map<Integer,Future<?>> pending = new LinkedHashMap<>();
+        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            try {
+                for (int status : DIAGNOSTIC_STATUSES) {
+                    DiagnosticSample sample = new DiagnosticSample();
+                    samples.put(status, sample);
+                    pending.put(status, pool.submit(() -> {
+                        try { sampleStatus(config, apiKey, window, status, deadline, sample); }
+                        catch (InterruptedException e) { Thread.currentThread().interrupt(); sample.failed(); }
+                        catch (Exception e) { sample.failed(); }
+                    }));
+                }
+                for (var entry : pending.entrySet()) {
+                    try { await(entry.getValue(), deadline); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); throw e; }
+                    catch (Exception e) { samples.get(entry.getKey()).failed(); }
+                }
+            } finally {
+                pending.values().forEach(future -> future.cancel(true));
+            }
+        }
+        List<JsonNode> rows = new ArrayList<>();
+        Map<String,Object> perStatus = new LinkedHashMap<>();
+        boolean complete = true, truncated = false, totalKnown = true;
+        long expectedCount = 0;
+        List<String> secrets = secrets(config, apiKey);
+        for (var entry : samples.entrySet()) {
+            DiagnosticSample sample = entry.getValue();
+            for (JsonNode row : sample.rows()) rows.add(sanitize(row, secrets));
+            Map<String,Object> details = sample.coverage();
+            perStatus.put(entry.getKey().toString(), details);
+            complete &= Boolean.TRUE.equals(details.get("complete"));
+            truncated |= Boolean.TRUE.equals(details.get("truncated"));
+            if (details.get("expectedCount") instanceof Number count) expectedCount = Math.addExact(expectedCount, count.longValue());
+            else totalKnown = false;
+        }
+        Map<String,Object> coverage = new LinkedHashMap<>();
+        coverage.put("complete", complete); coverage.put("truncated", truncated);
+        coverage.put("fetchedCount", rows.size()); coverage.put("expectedCount", totalKnown ? expectedCount : null);
+        coverage.put("maxRecords", DIAGNOSTIC_RECORDS_PER_STATUS * DIAGNOSTIC_STATUSES.size());
+        coverage.put("perStatus", perStatus);
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        Instant queriedAt = Instant.now();
+        Map<String,Object> response = base(config, window);
+        response.put("queriedAt", queriedAt.toString());
+        response.put("diagnostics", TaskDiagnostics.summarize(config, rows, queriedAt, coverage));
+        return response;
+    }
+
+    private void sampleStatus(AppConfig config, String apiKey, Window window, int status, long deadline,
+                              DiagnosticSample sample) throws Exception {
+        Set<String> signatures = new HashSet<>(), recordIds = new HashSet<>();
+        int pageSize = 200;
+        for (int page = 1; page <= 100; page++) {
+            Page result = request(config, apiKey, window, status, page, pageSize, deadline);
+            if (page == 1) pageSize = result.pageSize();
+            synchronized (sample) {
+                if (sample.error != null) return; // A deadline decision cannot be reversed by a late page.
+                if (result.total() != null) {
+                    if (sample.expectedCount != null && !sample.expectedCount.equals(result.total()))
+                        throw new IOException("诊断分页总数发生变化。");
+                    sample.expectedCount = result.total();
+                }
+                List<String> signature = result.rows().stream().map(JsonNode::toString).sorted().toList();
+                if (!result.rows().isEmpty() && !signatures.add(signature.toString()))
+                    throw new IOException("诊断分页重复。");
+                for (JsonNode row : result.rows()) {
+                    String id = text(row, "uuid", "id");
+                    if (!id.isBlank() && !recordIds.add(id)) throw new IOException("诊断记录重复。");
+                    if (sample.rows.size() == DIAGNOSTIC_RECORDS_PER_STATUS) {
+                        sample.truncated = true;
+                        return;
+                    }
+                    sample.rows.add(row);
+                }
+                if (sample.expectedCount != null && sample.rows.size() > sample.expectedCount)
+                    throw new IOException("诊断记录数量超过总数。");
+                boolean reachedTotal = sample.expectedCount != null && sample.rows.size() == sample.expectedCount;
+                if (reachedTotal) {
+                    if (Boolean.TRUE.equals(result.hasMore())) throw new IOException("诊断分页元数据冲突。");
+                    sample.complete = true;
+                    return;
+                }
+                if (result.rows().isEmpty() || Boolean.FALSE.equals(result.hasMore())) {
+                    if (sample.expectedCount != null && sample.rows.size() != sample.expectedCount)
+                        throw new IOException("诊断分页提前结束。");
+                    sample.expectedCount = (long) sample.rows.size();
+                    sample.complete = true;
+                    return;
+                }
+                if (sample.rows.size() == DIAGNOSTIC_RECORDS_PER_STATUS) {
+                    sample.truncated = true;
+                    return;
+                }
+            }
+        }
+        throw new IOException("诊断分页超过安全上限。");
     }
 
     private long count(AppConfig config, String key, Window window, Integer status, long deadline) throws Exception {

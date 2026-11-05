@@ -89,6 +89,40 @@ class LlmClientTest {
     }
 
     @Test
+    void taskBriefUsesOperationalDiagnosisAndOnlySendsAggregateEvidence() throws Exception {
+        List<JsonNode> requests = new CopyOnWriteArrayList<>();
+        AppConfig config = start(exchange -> {
+            requests.add(Json.MAPPER.readTree(exchange.getRequestBody()));
+            reply(exchange, 200, completion("【判断】优先核对状态0的久未更新记录。\n【优先排查】先查看工作流甲。\n【建议】核对状态流转与回调日志。"));
+        });
+        Map<String,Object> diagnostics = Map.of("coverage", Map.of("complete", false, "observedCount", 20, "expectedCount", 40),
+                "aging", Map.of("updated", Map.of("oldestMinutes", 180, "atLeast60Minutes", 12)),
+                "workflowsTop5", List.of(Map.of("workflowName", "工作流甲", "taskType", "type-a", "count", 12,
+                        "notUpdatedOver60Minutes", 9, "raw_error", "RAW_ERROR_MUST_NOT_SEND")),
+                "errorCodesTop5", List.of(Map.of("code", "E_LIMIT", "count", 3)),
+                "metadata", Map.of("negative_prompt", "NEGATIVE_PROMPT_MUST_NOT_SEND", "token", "PRIVATE_TOKEN_MUST_NOT_SEND"));
+        var result = new LlmClient().summarizeTasks(config, Map.of("total", 100, "counts", Map.of("2", 60, "0", 40),
+                "diagnostics", diagnostics, "tasks", List.of(Map.of("prompt", "RAW_TASK_MUST_NOT_SEND")),
+                "api_key", "PRIVATE_KEY_MUST_NOT_SEND"));
+        assertEquals("success", result.status());
+        JsonNode request = requests.getFirst();
+        String system = request.path("messages").path(0).path("content").asText();
+        assertTrue(system.contains("运营诊断"));
+        assertTrue(system.contains("【优先排查】"));
+        assertTrue(system.contains("不是排队时长、处理耗时"));
+        assertTrue(system.contains("不把样本比例外推"));
+        assertTrue(system.contains("只有total=0"), "an empty diagnostic sample must not erase global task counts");
+        assertTrue(system.contains("matchesStatusSummary=false"), "changed snapshots must not be combined into a rate or trend");
+        assertTrue(system.contains("是否终态"), "old records are not necessarily pending or blocked");
+        JsonNode evidence = Json.MAPPER.readTree(request.path("messages").path(1).path("content").asText());
+        assertEquals(180, evidence.path("diagnostics").path("aging").path("updated").path("oldestMinutes").asInt());
+        assertEquals("type-a", evidence.path("diagnostics").path("workflowsTop5").path(0).path("taskType").asText());
+        assertEquals("E_LIMIT", evidence.path("diagnostics").path("errorCodesTop5").path(0).path("code").asText());
+        for (String raw : List.of("RAW_ERROR_MUST_NOT_SEND", "NEGATIVE_PROMPT_MUST_NOT_SEND", "PRIVATE_TOKEN_MUST_NOT_SEND", "RAW_TASK_MUST_NOT_SEND", "PRIVATE_KEY_MUST_NOT_SEND"))
+            assertFalse(request.toString().contains(raw), raw);
+    }
+
+    @Test
     void transientServerErrorRetriesOnlyOnceThenSucceeds() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
         AppConfig config = start(exchange -> {

@@ -76,6 +76,7 @@ public final class WebServer implements AutoCloseable {
                 case "GET /api/status" -> json(exchange, 200, worker.status());
                 case "GET /api/tasks" -> json(exchange, 200, taskQueries.list(worker.configs.snapshot(), taskParams(exchange)));
                 case "GET /api/tasks/statistics" -> json(exchange, 200, taskQueries.statistics(worker.configs.snapshot(), taskParams(exchange)));
+                case "GET /api/tasks/diagnostics" -> json(exchange, 200, taskQueries.diagnostics(worker.configs.snapshot(), taskParams(exchange)));
                 case "POST /api/ai/start" -> json(exchange, 202, worker.startAiTask(body(exchange)));
                 case "GET /api/ai/status" -> json(exchange, 200, worker.aiTaskStatus(query(exchange, "id")));
                 case "POST /api/ai/cancel" -> json(exchange, 200, worker.cancelAiTask(body(exchange)));

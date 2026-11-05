@@ -33,7 +33,7 @@ window.P0Tasks = (() => {
   const taskType = (row) => scalar(first(row,['task_type','taskType','type']));
   const workflowName = (row) => scalar(first(row,['workflow_name','workflowName']));
   const channel = (row) => scalar(first(row,['hash_key','hashKey','user_hash','userHash']));
-  const statusLabel = (value) => String(value) === '2' ? '成功 · 2' : `状态 ${value ?? '未知'}`;
+  const statusLabel = (value) => String(value) === '-1' ? '失败 · -1' : String(value) === '2' ? '成功 · 2' : `状态 ${value ?? '未知'}`;
   const intervalKey = (query) => JSON.stringify([query.start_time,query.end_time,query.task_type,query.hash_key,query.task_id,config?.timezone]);
   const filterCaption = (query) => [['工作流',query.task_type],['HashKey',query.hash_key],['任务 ID',query.task_id]].filter(([,value]) => value).map(([name,value]) => `${name} ${compact(value,32)}`).join(' · ');
   const displayTime = (value) => {
@@ -186,7 +186,7 @@ window.P0Tasks = (() => {
       const note = response.complete === false ? ' · 部分状态统计未完成，请缩短时间段或重试' : difference != null && Number(difference) !== 0 ? ` · 状态统计与总数差 ${fmt(difference)}，任务状态可能在查询期间变化` : '';
       el('tasks-stats-caption').textContent = `时间段统计 · ${filterCaption(query) ? '匹配条件的全部状态' : '全部状态'}${note} · ${config?.timezone || response.timezone}`;
       el('tasks-stats-retry').classList.toggle('hidden',response.complete !== false && response.consistent !== false);
-      el('tasks-ai-scope').textContent = response.complete === false ? '部分状态统计尚未完成，补齐后自动生成 AI 简报。' : config?.llmEnabled && config?.llmApiKeyConfigured ? '查询后自动生成，基于所选条件的状态汇总，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
+      el('tasks-ai-scope').textContent = response.complete === false ? '部分状态统计尚未完成，补齐后自动生成 AI 简报。' : config?.llmEnabled && config?.llmApiKeyConfigured ? '查询后自动分析未成功任务、工作流与渠道集中情况，并给出排查重点。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
     } catch (error) {
       if (sequence !== statsSequence || error.name === 'AbortError') return;
       el('tasks-stats-caption').textContent = `统计未完成：${errorText(error,'P0 时间段统计')}`;
@@ -261,7 +261,7 @@ window.P0Tasks = (() => {
 
   function statusBadge(row) {
     const value = first(row,['status','task_status','taskStatus']);
-    const color = String(value) === '2' ? 'text-success bg-success-subtle border-success-subtle' : 'text-body-secondary bg-body-tertiary';
+    const color = String(value) === '-1' ? 'text-danger bg-danger-subtle border-danger-subtle' : String(value) === '2' ? 'text-success bg-success-subtle border-success-subtle' : 'text-body-secondary bg-body-tertiary';
     return `<span class="badge border fw-normal ${color}">${esc(statusLabel(value === '' ? '未知' : value))}</span>`;
   }
 
@@ -288,7 +288,8 @@ window.P0Tasks = (() => {
     el('tasks-result-count').textContent = pageData?.total != null ? `${fmt(pageData.total)} 条` : `本页 ${fmt(items.length)} 条`;
     const page = applied?.page || 1;
     const totalPages = pageData?.total != null ? Math.max(1,Math.ceil(pageData.total/(pageData.pageSize || applied.page_size))) : null;
-    el('tasks-page-info').textContent = `第 ${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`} 页 · 本页 ${fmt(items.length)} 条${keyword ? ` · 匹配 ${fmt(rows.length)} 条` : ''}`;
+    const totalLabel = pageData?.total != null ? `共 ${fmt(pageData.total)} 条` : '总数未提供';
+    el('tasks-page-info').textContent = `${totalLabel} · 第 ${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`} 页 · 本页 ${fmt(items.length)} 条${keyword ? ` · 匹配 ${fmt(rows.length)} 条` : ''}`;
     updateActions();
   }
 
@@ -340,16 +341,17 @@ window.P0Tasks = (() => {
     el('tasks-ai-timeout').disabled = true;
     el('tasks-ai-cancel').classList.remove('hidden');
     el('tasks-ai-output').classList.remove('hidden');
-    el('tasks-ai-output').textContent = `正在生成任务简报，最多等待 ${timeoutSeconds} 秒…`;
+    el('tasks-ai-output').textContent = `正在分析任务并生成简报，最多等待 ${timeoutSeconds} 秒…`;
     updateActions();
     try {
       const result = await runAiTask({kind:'tasks',statistics:captured},{timeoutSeconds,signal:aiController.signal,onProgress:(progress) => {
         if (sequence !== aiSequence) return;
         if (typeof progress === 'string') el('tasks-ai-output').textContent = progress;
-        else if (progress && Number.isFinite(progress.remainingSeconds)) el('tasks-ai-output').textContent = `正在生成任务简报，已等待 ${Math.floor(progress.elapsedSeconds || 0)} 秒，剩余最多 ${Math.ceil(progress.remainingSeconds)} 秒…`;
+        else if (progress && Number.isFinite(progress.remainingSeconds)) el('tasks-ai-output').textContent = `正在分析任务并生成简报，已等待 ${Math.floor(progress.elapsedSeconds || 0)} 秒，剩余最多 ${Math.ceil(progress.remainingSeconds)} 秒…`;
       }});
       if (sequence !== aiSequence || captured !== statistics) return;
       el('tasks-ai-output').textContent = result.aiStatus === 'ok' ? result.aiText || result.aiMessage : result.aiMessage || 'AI 暂不可用，任务统计已保留。';
+      if (result.analysisNote) el('tasks-ai-scope').textContent = result.analysisNote;
     } catch (error) {
       if (sequence !== aiSequence || error.name === 'AbortError') return;
       el('tasks-ai-output').textContent = `简报未生成：${errorText(error,'P0 AI 任务简报')}`;
@@ -384,7 +386,7 @@ window.P0Tasks = (() => {
       }
       el('tasks-ai-timeout').value = timeout;
     }
-    el('tasks-ai-scope').textContent = config.llmEnabled && config.llmApiKeyConfigured ? '查询后自动生成，基于所选条件的状态汇总，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
+    el('tasks-ai-scope').textContent = config.llmEnabled && config.llmApiKeyConfigured ? '查询后自动分析未成功任务、工作流与渠道集中情况，并给出排查重点。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
     updateActions();
     if (location.hash === '#tasks' && !applied) activate();
   }

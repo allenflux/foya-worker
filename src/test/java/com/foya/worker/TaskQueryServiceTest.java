@@ -252,6 +252,96 @@ class TaskQueryServiceTest {
         assertFalse(stats.has("otherCount"));
     }
 
+    private static String diagnosticPage(Map<String,String> query, int total, int effectiveSize, boolean repeat) {
+        int status = Integer.parseInt(query.get("status"));
+        int page = Integer.parseInt(query.get("page"));
+        int offset = (page - 1) * effectiveSize;
+        List<Map<String,Object>> rows = new ArrayList<>();
+        for (int index = offset; index < Math.min(offset + effectiveSize, total); index++) {
+            int record = repeat ? index % effectiveSize : index;
+            rows.add(Map.of("uuid", status + "-record-" + record, "status", status,
+                    "task_type", query.getOrDefault("task_type", "flow"), "hash_key", query.getOrDefault("hash_key", "hash"),
+                    "workflow_name", "实际工作流", "created_at", "2026-11-04T10:10:00",
+                    "updated_at", "2026-11-04T10:11:00", "prompt", "RAW_PROMPT_MUST_NOT_RETURN",
+                    "error", "RAW_ERROR_MUST_NOT_RETURN", "error_code", "GEN_TIMEOUT"));
+        }
+        return Json.MAPPER.valueToTree(Map.of("total_count", total, "page_size", effectiveSize, "tasks", rows)).toString();
+    }
+
+    @Test void diagnosticsTraverseAllNonSuccessStatusesAndReturnOnlyFilteredAggregates() throws Exception {
+        Set<String> requested = ConcurrentHashMap.newKeySet();
+        AtomicInteger calls = new AtomicInteger();
+        serve(query -> {
+            String status = query.get("status");
+            requested.add(status); calls.incrementAndGet();
+            assertNotEquals("2", status, "diagnostics must not bulk-fetch successful tasks");
+            assertEquals("flow", query.get("task_type"));
+            assertEquals("hash", query.get("hash_key"));
+            int total = Map.of("-1", 2, "0", 3, "1", 0, "3", 1).get(status);
+            return diagnosticPage(query, total, 2, false);
+        });
+        Map<String,String> params = params();
+        params.putAll(Map.of("status", "2", "task_type", "flow", "hash_key", "hash"));
+        config.channelNames.put("hash", "渠道甲");
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService().diagnostics(config, params));
+        JsonNode coverage = result.path("diagnostics").path("coverage");
+        assertEquals(Set.of("-1", "0", "1", "3"), requested);
+        assertEquals(5, calls.get(), "status zero needs a second page");
+        assertTrue(coverage.path("complete").asBoolean());
+        assertEquals(6, coverage.path("observedCount").asLong());
+        assertEquals(6, coverage.path("expectedCount").asLong());
+        assertEquals("flow", result.path("filters").path("taskType").asText());
+        assertFalse(result.toString().contains("RAW_PROMPT_MUST_NOT_RETURN"));
+        assertFalse(result.toString().contains("RAW_ERROR_MUST_NOT_RETURN"));
+        assertFalse(result.has("items"));
+    }
+
+    @Test void diagnosticRecordCapIsExplicitAndNeverReportedAsCompleteCoverage() throws Exception {
+        serve(query -> diagnosticPage(query, "0".equals(query.get("status")) ? 750 : 0, 200, false));
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService().diagnostics(config, params()));
+        JsonNode coverage = result.path("diagnostics").path("coverage");
+        assertFalse(coverage.path("complete").asBoolean());
+        assertTrue(coverage.path("truncated").asBoolean());
+        assertEquals(500, coverage.path("observedCount").asLong());
+        assertEquals(750, coverage.path("expectedCount").asLong());
+        assertFalse(coverage.path("perStatus").path("0").path("complete").asBoolean());
+    }
+
+    @Test void diagnosticDeadlinePreservesOtherStatusesAndLabelsMissingCoverage() throws Exception {
+        serve(query -> {
+            if ("3".equals(query.get("status"))) {
+                try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+            return diagnosticPage(query, "0".equals(query.get("status")) ? 1 : 0, 200, false);
+        });
+        long started = System.nanoTime();
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService(Duration.ofMillis(350)).diagnostics(config, params()));
+        assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() < 1500);
+        JsonNode coverage = result.path("diagnostics").path("coverage");
+        assertFalse(coverage.path("complete").asBoolean());
+        assertEquals(1, coverage.path("observedCount").asLong());
+        assertTrue(coverage.path("perStatus").path("0").path("complete").asBoolean());
+        assertFalse(coverage.path("perStatus").path("3").path("complete").asBoolean());
+    }
+
+    @Test void duplicateDiagnosticPagesCannotBecomeCompleteEvidence() throws Exception {
+        serve(query -> diagnosticPage(query, "0".equals(query.get("status")) ? 5 : 0, 2, true));
+        JsonNode coverage = Json.MAPPER.valueToTree(new TaskQueryService().diagnostics(config, params()))
+                .path("diagnostics").path("coverage");
+        assertFalse(coverage.path("complete").asBoolean());
+        assertEquals(2, coverage.path("observedCount").asLong());
+        assertFalse(coverage.path("perStatus").path("0").path("complete").asBoolean());
+    }
+
+    @Test void zeroNonSuccessTasksHaveCompleteEmptyDiagnosticCoverage() throws Exception {
+        serve(query -> diagnosticPage(query, 0, 200, false));
+        JsonNode coverage = Json.MAPPER.valueToTree(new TaskQueryService().diagnostics(config, params()))
+                .path("diagnostics").path("coverage");
+        assertTrue(coverage.path("complete").asBoolean());
+        assertEquals(0, coverage.path("observedCount").asLong());
+        assertEquals(0, coverage.path("expectedCount").asLong());
+    }
+
     @Test void routesAreReadOnlyAndReturnValidationErrorsWithRequestDetails() throws Exception {
         serve(q -> "{\"total_count\":0,\"tasks\":[]}");
         try (WorkerService worker = TestWorkers.create(directory);

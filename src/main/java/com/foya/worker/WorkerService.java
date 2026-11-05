@@ -375,7 +375,7 @@ public final class WorkerService implements AutoCloseable {
                     if (kind.equals("report")) {
                         result = new LinkedHashMap<>(summaryResponse(config, report(config, date)));
                         result.put("aiText", result.getOrDefault("aiSummary", ""));
-                    } else result = taskSummaryResult(llm.summarizeTasks(config, metrics));
+                    } else result = summarizeTaskDiagnostics(config, metrics);
                     task.finish("complete", result);
                 } catch (Exception e) {
                     task.finish("complete", Map.of("aiStatus", "failed", "aiText", "", "aiMessage", redactSecrets(JobManager.safeError(e))));
@@ -401,7 +401,86 @@ public final class WorkerService implements AutoCloseable {
 
     public Map<String,Object> taskSummaryResponse(com.fasterxml.jackson.databind.JsonNode input) {
         AppConfig config = configs.snapshot();
-        return taskSummaryResult(llm.summarizeTasks(config, taskSummaryMetrics(input.path("statistics"), config.timezone)));
+        try { return summarizeTaskDiagnostics(config, taskSummaryMetrics(input.path("statistics"), config.timezone)); }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Map.of("aiStatus", "failed", "aiText", "", "aiMessage", "AI 任务简报已取消，原始统计仍可查看。");
+        }
+    }
+
+    /** Enrich the brief with bounded, server-generated aggregates, never caller-supplied task content. */
+    private Map<String,Object> summarizeTaskDiagnostics(AppConfig config, Map<String,Object> metrics) throws InterruptedException {
+        if (!config.llmEnabled || config.llmApiKey.isBlank()) return taskSummaryResult(llm.summarizeTasks(config, metrics));
+        Map<String,Object> enriched = new LinkedHashMap<>(metrics);
+        var data = Json.MAPPER.valueToTree(metrics);
+        Map<String,String> params = new LinkedHashMap<>();
+        params.put("start_time", data.path("startTime").asText());
+        params.put("end_time", data.path("endTime").asText());
+        var filters = data.path("filters");
+        for (String field : List.of("task_type", "hash_key", "task_id"))
+            if (!filters.path(field).asText("").isBlank()) params.put(field, filters.path(field).asText());
+        long nonSuccess = 0;
+        for (var entry : data.path("counts").properties())
+            if (!entry.getKey().equals("2")) nonSuccess += entry.getValue().longValue();
+        Map<String,Object> diagnostics;
+        try {
+            if (nonSuccess == 0 && data.path("consistent").asBoolean()) {
+                Map<String,Object> emptyStatuses = new LinkedHashMap<>();
+                for (String status : List.of("-1", "0", "1", "3")) emptyStatuses.put(status,
+                        Map.of("complete", true, "fetchedCount", 0, "expectedCount", 0, "truncated", false));
+                diagnostics = TaskDiagnostics.summarize(config, List.of(), Instant.now(),
+                        Map.of("complete", true, "fetchedCount", 0, "expectedCount", 0, "maxRecords", 2000,
+                                "truncated", false, "perStatus", emptyStatuses));
+            } else {
+                // Preserve most of the user's generation budget for the model itself.
+                int diagnosticSeconds = Math.min(10, Math.max(1, config.llmTimeoutSeconds / 3));
+                var source = new TaskQueryService(Duration.ofSeconds(diagnosticSeconds)).diagnostics(config, params);
+                var node = Json.MAPPER.valueToTree(source).path("diagnostics");
+                if (!node.isObject()) throw new IOException("任务诊断汇总不可用。");
+                diagnostics = Json.MAPPER.convertValue(node, new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
+            }
+            diagnostics = new LinkedHashMap<>(diagnostics);
+            diagnostics.put("available", true);
+            diagnostics.put("nonSuccessAtStatusQuery", nonSuccess);
+            var coverage = Json.MAPPER.valueToTree(diagnostics).path("coverage");
+            boolean matches = coverage.path("expectedCount").isIntegralNumber()
+                    && coverage.path("expectedCount").asLong() == nonSuccess && data.path("consistent").asBoolean();
+            for (String status : List.of("-1", "0", "1", "3")) {
+                var expected = coverage.path("perStatus").path(status).path("expectedCount");
+                matches &= expected.isIntegralNumber() && data.path("counts").path(status).isIntegralNumber()
+                        && expected.asLong() == data.path("counts").path(status).asLong();
+            }
+            diagnostics.put("matchesStatusSummary", matches);
+            if (coverage.path("observedCount").asLong() == 0 && !coverage.path("complete").asBoolean() && nonSuccess > 0) {
+                diagnostics.put("available", false);
+                diagnostics.put("reason", "本次未读取到可用任务明细，仅依据状态汇总给出核对步骤。");
+            }
+        } catch (InterruptedException e) { throw e; }
+        catch (Exception e) {
+            diagnostics = Map.of("available", false, "reason", "未成功任务明细暂未补齐，本次只依据状态汇总，不推断耗时、原因或工作流分布。");
+        }
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        enriched.put("diagnostics", diagnostics);
+        // Filters still constrain the P0 query, but identifiers do not need to reach the model.
+        Map<String,Object> modelFilters = new LinkedHashMap<>();
+        if (!filters.path("task_type").asText("").isBlank()) modelFilters.put("task_type", filters.path("task_type").asText());
+        if (!filters.path("hash_key").asText("").isBlank()) modelFilters.put("channelSelected", true);
+        if (!filters.path("task_id").asText("").isBlank()) modelFilters.put("singleTaskSelected", true);
+        enriched.put("filters", modelFilters);
+        var result = new LinkedHashMap<>(taskSummaryResult(llm.summarizeTasks(config, enriched)));
+        var evidence = Json.MAPPER.valueToTree(diagnostics);
+        if (!evidence.path("available").asBoolean()) {
+            result.put("analysisNote", "本次基于状态汇总，未成功任务明细暂未补齐。");
+        } else {
+            long records = evidence.path("coverage").path("observedCount").asLong();
+            boolean complete = evidence.path("coverage").path("complete").asBoolean();
+            String note = records == 0 && complete ? "诊断取数时未发现未成功记录，可刷新核对最新状态。"
+                    : complete ? "已核对 " + records + " 条未成功任务，结合存续时间、更新时间和工作流／渠道分布分析。"
+                    : "已读取 " + records + " 条未成功任务样本；诊断尚未覆盖全部记录，结论仅限已读取样本。";
+            if (records > 0 && !evidence.path("matchesStatusSummary").asBoolean()) note += " 状态在两次取数间发生变化，明细与卡片计数分别解读。";
+            result.put("analysisNote", note);
+        }
+        return result;
     }
 
     private static Map<String,Object> taskSummaryResult(LlmClient.Summary summary) {
@@ -449,7 +528,7 @@ public final class WorkerService implements AutoCloseable {
         long difference = nonNegativeCount(input.path("total")) - classified;
         metrics.put("snapshotDifference", difference);
         metrics.put("consistent", difference == 0);
-        metrics.put("statusMeaning", Map.of("2", "成功", "otherCodes", "仅按状态码解读，名称未确认"));
+        metrics.put("statusMeaning", Map.of("-1", "失败", "2", "成功", "otherCodes", "状态0/1/3仅按状态码解读，名称未确认"));
         metrics.put("snapshotNote", "状态与总数分别查询；snapshotDifference 是查询期间的快照差额，不是其他状态。consistent=false 时不计算占比或成功率，只说明独立计数及差额；非端到端成功率。");
         return metrics;
     }
