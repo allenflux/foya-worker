@@ -1,0 +1,162 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1088,
+      "height": 1440,
+      "batch_size": 1,
+      "color": 16777215
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "prompt": [
+        "23",
+        0
+      ],
+      "negative_prompt": "错别字，缺字，多字，乱码，重复文字，擅自改写文案，翻译文案，文字重叠，文字溢出，遮挡面部，产品变形，标识变形，低清晰度",
+      "resolution": 0,
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "5",
+        2
+      ],
+      "amount": 1
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "Qwen_Promo_V2"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": ""
+    }
+  },
+  "20": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": ""
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "在<image1>的目标画布上，用<image2>中的人物或产品制作商业宣传海报，保持主体和品牌标识的关键特征。根据素材搭配风格、背景和配色，主体突出，留白充足，标题与正文层次清晰，字体清楚，不遮挡主体。设计说明不出现在画面中。"
+    }
+  },
+  "22": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": [
+        "21",
+        0
+      ],
+      "string_b": [
+        "20",
+        0
+      ],
+      "delimiter": "\n\n图片中的新增文字仅限下面引号内的原文，逐字保留字形、标点、大小写和换行，不补写、不删减、不改写、不翻译，也不从素材提取其他文案；引号本身不要画出来：\n\""
+    }
+  },
+  "23": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": [
+        "22",
+        0
+      ],
+      "string_b": "\"",
+      "delimiter": ""
+    }
+  }
+}

@@ -32,7 +32,7 @@ public class AppConfig {
     public String llmBaseUrl = "https://llm.aiaipool.com/v1";
     public String llmApiKey = "";
     public String llmModel = "deepseek-v41-flash";
-    public int llmTimeoutSeconds = 60;
+    public int llmTimeoutSeconds = 120;
     public Map<String, String> channelNames = new LinkedHashMap<>();
     public Map<String, String> workflowNames = new LinkedHashMap<>();
     public Map<String, java.math.BigDecimal> taskTypePrices = new LinkedHashMap<>();
@@ -65,7 +65,7 @@ public class AppConfig {
                     || !("https".equals(uri.getScheme()) || local && "http".equals(uri.getScheme()))) throw new IllegalArgumentException();
         } catch (Exception e) { throw new IllegalArgumentException("LLM Base URL 必须是 HTTPS 地址（本机测试可用 HTTP）。"); }
         if (llmModel.isBlank() || llmModel.length() > 200) throw new IllegalArgumentException("LLM 模型名不能为空，最多 200 字符。");
-        if (llmTimeoutSeconds < 5 || llmTimeoutSeconds > 90) throw new IllegalArgumentException("LLM 总结超时应在 5–90 秒之间。");
+        if (llmTimeoutSeconds < 5 || llmTimeoutSeconds > 300) throw new IllegalArgumentException("LLM 总结超时应在 5–300 秒之间。");
         if (reportDays < 1 || reportDays > 31) throw new IllegalArgumentException("报表天数应在 1–31 天之间。");
         if (p0ApiKey == null || p0ApiKeyFile == null || telegramBotToken == null || telegramChatId == null || telegramThreadId == null)
             throw new IllegalArgumentException("配置项不能为 null。");

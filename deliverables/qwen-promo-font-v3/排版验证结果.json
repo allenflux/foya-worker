@@ -1,0 +1,15 @@
+{
+  "copy_text": "咖啡还是我的好",
+  "width": 1088,
+  "height": 1440,
+  "count": 1,
+  "font": "NotoSansCJKsc-Regular.otf",
+  "font_rendering": "real_font_glyphs",
+  "checks": {
+    "copy": "passed",
+    "glyph_coverage": "passed",
+    "layout": "passed",
+    "background_incidental_text": "requires_review"
+  },
+  "visual_acceptance": "requires_review"
+}

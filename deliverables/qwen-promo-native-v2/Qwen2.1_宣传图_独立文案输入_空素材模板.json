@@ -1,0 +1,795 @@
+{
+  "id": "d7f1f194-426f-4c6d-bbb7-6069bdd53a44",
+  "revision": 2,
+  "last_node_id": 23,
+  "last_link_id": 16,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "title": "Qwen Image 2.1 基础模型",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_bf16.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "title": "Qwen 编码器",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        40,
+        370
+      ],
+      "size": [
+        300,
+        65
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3,
+            11
+          ]
+        }
+      ],
+      "title": "Qwen VAE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_vae_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "EmptyImage",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        300,
+        145
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "title": "② 输出尺寸 · 宽高使用 32 的倍数",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "EmptyImage"
+      },
+      "widgets_values": [
+        1088,
+        1440,
+        1,
+        16777215
+      ]
+    },
+    {
+      "id": 5,
+      "type": "TextEncodeQwenImage21",
+      "pos": [
+        1310,
+        40
+      ],
+      "size": [
+        480,
+        400
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "name": "images.image_1",
+          "localized_name": "image_1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": 3
+        },
+        {
+          "name": "images.image_2",
+          "localized_name": "image_2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "name": "images.image_3",
+          "localized_name": "image_3",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "title": "⑤ Qwen 多图编辑 · 提示词由输入自动拼接",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "TextEncodeQwenImage21"
+      },
+      "widgets_values": [
+        "",
+        "错别字，缺字，多字，乱码，重复文字，擅自改写文案，翻译文案，文字重叠，文字溢出，遮挡面部，产品变形，标识变形，低清晰度",
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "type": "RepeatLatentBatch",
+      "pos": [
+        1310,
+        540
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "title": "⑥ 一次生成数量 · amount=1–4",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "RepeatLatentBatch"
+      },
+      "widgets_values": [
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "pos": [
+        1880,
+        40
+      ],
+      "size": [
+        300,
+        285
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 6
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 7
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "⑦ 单次批量采样",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        404940743691510,
+        "randomize",
+        30,
+        3,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [
+        1880,
+        420
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 10
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "title": "⑧ 解码",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        2250,
+        40
+      ],
+      "size": [
+        400,
+        400
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "⑨ 保存结果",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "Qwen_Promo_V2"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "LoadImage",
+      "pos": [
+        410,
+        540
+      ],
+      "size": [
+        420,
+        330
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "title": "① 上传宣传素材 · 必填",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "pos": [
+        900,
+        560
+      ],
+      "size": [
+        340,
+        300
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "使用说明 · 不发送给模型",
+      "properties": {
+        "Node name for S&R": "Note"
+      },
+      "widgets_values": [
+        "③只填真正需要出现在图片上的完整文案，不填说明、标题标签或示例。当前留空，填好再运行。\n④只描述素材用途、设计风格、背景配色与构图；语言要求可写在这里。\n文案通过原生文本节点与设计要求分开输入，再原样拼接给Qwen。没有自动改写、提取或翻译。\n②尺寸建议32的倍数。⑥amount=1–4；工具栏Batch Count保持1。\n多素材：复制LoadImage并接编码器下一项image_3，按提示继续添加；image_1为画布、image_2为主素材。\n纯Qwen仍可能产生错字，尤其长段落；此版减少说明文字误入，不宣称保证零错字。"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 20,
+      "type": "PrimitiveStringMultiline",
+      "title": "③ 上图文案 · 完整原文单独输入",
+      "pos": [
+        410,
+        40
+      ],
+      "size": [
+        420,
+        175
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#263f2c",
+      "bgcolor": "#3b5d43"
+    },
+    {
+      "id": 21,
+      "type": "PrimitiveStringMultiline",
+      "title": "④ 设计要求 · 只填风格、构图、语言等",
+      "pos": [
+        410,
+        270
+      ],
+      "size": [
+        420,
+        215
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "在<image1>的目标画布上，用<image2>中的人物或产品制作商业宣传海报，保持主体和品牌标识的关键特征。根据素材搭配风格、背景和配色，主体突出，留白充足，标题与正文层次清晰，字体清楚，不遮挡主体。设计说明不出现在画面中。"
+      ]
+    },
+    {
+      "id": 22,
+      "type": "StringConcatenate",
+      "title": "内部 · 设计要求＋完整文案",
+      "pos": [
+        900,
+        40
+      ],
+      "size": [
+        330,
+        190
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 13
+        },
+        {
+          "name": "string_b",
+          "type": "STRING",
+          "widget": {
+            "name": "string_b"
+          },
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StringConcatenate",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "",
+        "\n\n图片中的新增文字仅限下面引号内的原文，逐字保留字形、标点、大小写和换行，不补写、不删减、不改写、不翻译，也不从素材提取其他文案；引号本身不要画出来：\n\""
+      ]
+    },
+    {
+      "id": 23,
+      "type": "StringConcatenate",
+      "title": "内部 · 结束文案引用",
+      "pos": [
+        900,
+        320
+      ],
+      "size": [
+        330,
+        140
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StringConcatenate",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\"",
+        ""
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      2,
+      "VAE"
+    ],
+    [
+      4,
+      10,
+      0,
+      5,
+      3,
+      "IMAGE"
+    ],
+    [
+      5,
+      5,
+      2,
+      6,
+      0,
+      "LATENT"
+    ],
+    [
+      6,
+      1,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      7,
+      5,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      5,
+      1,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      10,
+      7,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      11,
+      3,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      12,
+      8,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      13,
+      21,
+      0,
+      22,
+      0,
+      "STRING"
+    ],
+    [
+      14,
+      20,
+      0,
+      22,
+      1,
+      "STRING"
+    ],
+    [
+      15,
+      22,
+      0,
+      23,
+      0,
+      "STRING"
+    ],
+    [
+      16,
+      23,
+      0,
+      5,
+      5,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.65,
+      "offset": [
+        5,
+        35
+      ]
+    }
+  },
+  "version": 0.4
+}

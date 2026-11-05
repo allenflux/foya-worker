@@ -1,0 +1,890 @@
+{
+  "id": "2a5579a0-7922-40c2-a7a4-5accba26c207",
+  "revision": 1,
+  "last_node_id": 19,
+  "last_link_id": 12,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "title": "Qwen Image 2.1 基础模型",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        310,
+        85
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_bf16.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "title": "Qwen 编码器",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        310,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "title": "Qwen VAE",
+      "pos": [
+        40,
+        390
+      ],
+      "size": [
+        310,
+        65
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            4,
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_vae_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "EmptyImage",
+      "title": "① 目标尺寸 · 宽高用 32 的倍数",
+      "pos": [
+        400,
+        40
+      ],
+      "size": [
+        300,
+        145
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyImage"
+      },
+      "widgets_values": [
+        1088,
+        1440,
+        1,
+        16777215
+      ]
+    },
+    {
+      "id": 5,
+      "type": "TextEncodeQwenImage21",
+      "title": "③ 填完整文案、语言、风格与设计要求",
+      "pos": [
+        1140,
+        40
+      ],
+      "size": [
+        550,
+        750
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "name": "images.image_1",
+          "type": "IMAGE",
+          "link": 2,
+          "shape": 7
+        },
+        {
+          "name": "images.image_2",
+          "type": "IMAGE",
+          "link": 3,
+          "shape": 7
+        },
+        {
+          "name": "images.image_3",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_4",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_5",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_6",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_7",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_8",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_9",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "images.image_10",
+          "type": "IMAGE",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImage21"
+      },
+      "widgets_values": [
+        "制作一张用于正常商业推广的宣传设计图。\n\n【素材角色】\n<image1> 是空白目标画布，仅决定输出尺寸和画面比例，不是宣传素材。\n<image2> 是必需的主要宣传素材，保留其中指定人物、产品及品牌标识的关键特征。\n如连接了 <image3> 至 <image10>，它们为额外素材；按下方素材说明使用。没有连接的图片不参与设计。\n\n【设计要求】\n按照指定要求组合素材，设计背景、配色、光影和构图。人物身份、产品形状、颜色、结构及品牌标识保持一致。按目标画布尺寸重新构图，不通过拉伸或裁切关键主体适配画面。\n设计风格有填写时，以该风格为基础，视觉提示词只补充细节。未填写风格时，根据视觉提示词、参考图和素材内容选择适合的风格。标题及正文采用适合设计风格与目标语言的清晰字体。\n\n【文案规则】\n上图文字只能来自下方“指定上图文案”区域，完整保留调用方提供的每一个字、标点、数字、大小写及字形。不得补写标题、口号、卖点、标签，不得从素材提取新的文案，不得翻译、简繁转换、删减或改写。素材中的原有品牌标识保持原样。\n按标题与正文建立清楚的主次层级，合理留白与换行，文字清晰完整、不重叠、不溢出，不遮挡人物面部、产品及重要标识。简体、繁体、英文以及混排均保持原样。\n\n【调用方填写：目标语言】\n简体中文\n\n【调用方填写：设计风格；可以留空】\n\n\n【调用方填写：素材说明与视觉提示词】\n\n\n【调用方填写：指定上图文案；必须填写完整原文】\n<copy>\n\n</copy>\n",
+        "misspelled text, missing characters, substituted characters, invented slogans, translated text, simplified-traditional conversion, unreadable typography, overlapping text, overflowing text, tiny illegible letters, text covering face or product, distorted product, altered brand logo, deformed face, malformed hands, duplicated subject, cropped key subject, stretched image, blurry, low quality, compression artifacts, new watermark",
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "type": "RepeatLatentBatch",
+      "title": "④ 本次生成数量 · amount 填 1–4",
+      "pos": [
+        1780,
+        40
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RepeatLatentBatch"
+      },
+      "widgets_values": [
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "title": "⑤ 单次批量采样",
+      "pos": [
+        1780,
+        230
+      ],
+      "size": [
+        300,
+        285
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 6
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 7
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        42,
+        "randomize",
+        30,
+        3.0,
+        "euler",
+        "simple",
+        1.0
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "title": "⑥ 解码",
+      "pos": [
+        2170,
+        40
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 10
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "title": "⑦ 保存宣传图",
+      "pos": [
+        2490,
+        40
+      ],
+      "size": [
+        340,
+        300
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "Qwen_Promo"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "LoadImage",
+      "title": "② 上传主要宣传素材 · 必填",
+      "pos": [
+        400,
+        270
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "LoadImage",
+      "title": "可选素材 2 · 上传后连接编码器 image_3",
+      "pos": [
+        740,
+        270
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "LoadImage",
+      "title": "可选素材 3 · 上传后连接编码器 image_4",
+      "pos": [
+        400,
+        650
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "LoadImage",
+      "title": "可选素材 4 · 上传后连接编码器 image_5",
+      "pos": [
+        740,
+        650
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "LoadImage",
+      "title": "可选素材 5 · 上传后连接编码器 image_6",
+      "pos": [
+        400,
+        1030
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 15,
+      "type": "LoadImage",
+      "title": "可选素材 6 · 上传后连接编码器 image_7",
+      "pos": [
+        740,
+        1030
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 16,
+      "type": "LoadImage",
+      "title": "可选素材 7 · 上传后连接编码器 image_8",
+      "pos": [
+        400,
+        1410
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 17,
+      "type": "LoadImage",
+      "title": "可选素材 8 · 上传后连接编码器 image_9",
+      "pos": [
+        740,
+        1410
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 18,
+      "type": "LoadImage",
+      "title": "可选素材 9 · 上传后连接编码器 image_10",
+      "pos": [
+        400,
+        1790
+      ],
+      "size": [
+        300,
+        310
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "",
+        "image"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "title": "使用说明",
+      "pos": [
+        40,
+        560
+      ],
+      "size": [
+        310,
+        650
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Note"
+      },
+      "widgets_values": [
+        "纯 ComfyUI 原生节点版，无需安装本次新增的自定义节点。\n\n1. 目标尺寸在①设置，宽高建议32的倍数，batch_size保持1。\n2. 在②上传主要素材；其他素材上传后手动接到③对应 image_3～image_10 输入。\n3. 在③ prompt 底部填写完整原文、语言、风格和设计要求。未选风格可留空。\n4. ④ amount 设为1、2、3或4，一次运行批量出图。\n5. 分辨率 resolution 保持0，输出跟随①画布尺寸。不要把原来的 EmptyLatentImage 接回来。\n\n模型和素材都要准备好。缺主要图片时原生 LoadImage 会报错。\n\n纯模型直接出字需要看图核对；不能保证零错字、严格的缺文案拒绝或自动输出业务状态JSON。\n\n素材尺寸不宜过大；resolution=0保留参考图分辨率，多图和多张会增加显存占用。\n\n图片保存到 ComfyUI/output/Qwen_Promo_*.png。"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      10,
+      0,
+      5,
+      2,
+      "IMAGE"
+    ],
+    [
+      4,
+      3,
+      0,
+      5,
+      11,
+      "VAE"
+    ],
+    [
+      5,
+      5,
+      2,
+      6,
+      0,
+      "LATENT"
+    ],
+    [
+      6,
+      1,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      7,
+      5,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      5,
+      1,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      10,
+      7,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      11,
+      3,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      12,
+      8,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.48,
+      "offset": [
+        20,
+        40
+      ]
+    }
+  },
+  "version": 0.4
+}

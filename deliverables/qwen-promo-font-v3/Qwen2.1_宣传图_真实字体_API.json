@@ -1,0 +1,176 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "prompt": [
+        "30",
+        0
+      ],
+      "negative_prompt": "新增文字，新增标语，字幕，随机字母，随机数字，乱码，新增水印，主体变形，模糊",
+      "resolution": 0,
+      "images.image_1": [
+        "30",
+        1
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "5",
+        2
+      ],
+      "amount": [
+        "30",
+        3
+      ]
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "31",
+        0
+      ],
+      "filename_prefix": "Qwen_Promo_Exact"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Screenshot 2026-11-03 at 10.47.40 AM.png"
+    }
+  },
+  "20": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "咖啡还是我的好"
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "使用<image2>中的人物或产品制作商业宣传主视觉，保留主体外形、身份及品牌关键特征。根据素材设计协调的背景、配色和光影，主体突出，构图简洁，保留完整人物和产品。"
+    }
+  },
+  "30": {
+    "class_type": "ExactPromoTextPrepare",
+    "inputs": {
+      "material": [
+        "10",
+        0
+      ],
+      "copy_text": [
+        "20",
+        0
+      ],
+      "design_prompt": [
+        "21",
+        0
+      ],
+      "font": "NotoSansCJKsc-Regular.otf",
+      "width": 1088,
+      "height": 1440,
+      "count": 1,
+      "first_line_title": true,
+      "title_size": 64,
+      "body_size": 34,
+      "text_color": "#3b2415",
+      "panel_color": "#fff8ed"
+    }
+  },
+  "31": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "30",
+        2
+      ],
+      "source": [
+        "8",
+        0
+      ],
+      "x": [
+        "30",
+        4
+      ],
+      "y": 0,
+      "resize_source": false
+    }
+  }
+}

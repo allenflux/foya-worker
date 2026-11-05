@@ -1,0 +1,23 @@
+{
+  "prompt_id": "ab0a5747-250c-4158-b499-8d70f3863450",
+  "workflow": "Qwen2.1_宣传图_质感增强_正文防续写修正版.json",
+  "title": "咖啡还是我的好",
+  "body": "okok 哈喽哈喽",
+  "output_filename": "Qwen_Promo_BodyBoundaryTest_00001_.png",
+  "width": 1088,
+  "height": 1440,
+  "generated_count": 1,
+  "prompt_boundary_check": {
+    "rules_before_copy": true,
+    "copy_is_exact_prompt_tail": true,
+    "outer_quote_wrapper": false
+  },
+  "visual_result": {
+    "copy_compliance": "failed",
+    "extra_text_observed": true,
+    "repeated_title_observed": true,
+    "outer_title_quotes_removed": true
+  },
+  "conclusion": "提示词边界已修正，但本次实际Qwen出图仍增加文字，不能记为文案问题修复成功。",
+  "proof_screenshot": "/private/tmp/qwen-body-boundary-still-extra.jpg"
+}

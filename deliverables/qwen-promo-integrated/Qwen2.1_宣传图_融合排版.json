@@ -1,0 +1,825 @@
+{
+  "id": "18b31d0f-b7ab-45c8-9a6b-8f7705d77ff7",
+  "revision": 5,
+  "last_node_id": 40,
+  "last_link_id": 17,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "title": "Qwen Image 2.1 基础模型",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_bf16.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "title": "Qwen 编码器",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        40,
+        390
+      ],
+      "size": [
+        300,
+        65
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3,
+            12
+          ]
+        }
+      ],
+      "title": "Qwen VAE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_vae_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "EmptyImage",
+      "title": "整张海报画布 · 统一背景，不追加底栏",
+      "pos": [
+        430,
+        600
+      ],
+      "size": [
+        310,
+        150
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyImage",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        1088,
+        1440,
+        1,
+        16775405
+      ]
+    },
+    {
+      "id": 10,
+      "type": "LoadImage",
+      "pos": [
+        40,
+        560
+      ],
+      "size": [
+        330,
+        330
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "title": "① 宣传素材 · 保留当前已上传图片",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "Screenshot 2026-11-03 at 10.47.40 AM.png",
+        "image"
+      ]
+    },
+    {
+      "id": 20,
+      "type": "PrimitiveStringMultiline",
+      "title": "② 唯一上图文案 · 透明字体层",
+      "pos": [
+        430,
+        40
+      ],
+      "size": [
+        450,
+        170
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "咖啡还是我的好"
+      ],
+      "color": "#263f2c",
+      "bgcolor": "#3b5d43"
+    },
+    {
+      "id": 21,
+      "type": "PrimitiveStringMultiline",
+      "title": "③ 产品摄影要求 · 上方留白，主体下置",
+      "pos": [
+        430,
+        260
+      ],
+      "size": [
+        450,
+        270
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "以<image2>的产品为主体，在<image1>限定的画布内拍摄一张竖构图的真实产品静物照片。保留咖啡、可颂、盘子和托盘的外观与数量。主体整体位于画面下半部偏右，奶油米白色背景从上到下连续渐变到暖橙色，柔和自然侧光，真实材质与浅景深。画面上方约三分之一为干净、连续、平整的奶油色留白，背景自然延伸到主体周围。画面仅由实物、托盘、桌面、背景和光影组成。"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "TextEncodeQwenImage21",
+      "pos": [
+        970,
+        40
+      ],
+      "size": [
+        450,
+        410
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "name": "images.image_1",
+          "localized_name": "image_1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "shape": 7,
+          "link": 3
+        },
+        {
+          "name": "images.image_2",
+          "localized_name": "image_2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "name": "images.image_3",
+          "localized_name": "image_3",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            9
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "title": "⑤ Qwen 只画完整产品摄影底图",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "TextEncodeQwenImage21"
+      },
+      "widgets_values": [
+        "",
+        "text, typography, Chinese characters, letters, words, numbers, slogans, headlines, subtitles, captions, watermark, new logo, promotional badge, sticker, button, call to action, signboard, advertising graphics, infographic, poster text, collage, split layout, footer panel, separator, frame, deformed product, low quality",
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "type": "RepeatLatentBatch",
+      "pos": [
+        970,
+        560
+      ],
+      "size": [
+        310,
+        85
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 6
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "④ 一次生成数量 · amount 填 1–4",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "RepeatLatentBatch"
+      },
+      "widgets_values": [
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "pos": [
+        1510,
+        40
+      ],
+      "size": [
+        310,
+        285
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 7
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 9
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "title": "⑦ 单次采样 · 不负责文字",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        404940743691510,
+        "randomize",
+        30,
+        3,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [
+        1510,
+        420
+      ],
+      "size": [
+        260,
+        80
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 11
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "title": "⑧ 主视觉解码",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 40,
+      "type": "DrawText+",
+      "title": "⑦ Essentials 透明字层 · 不带底板",
+      "pos": [
+        1890,
+        40
+      ],
+      "size": [
+        430,
+        510
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "img_composite",
+          "type": "IMAGE",
+          "shape": 7,
+          "link": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            15
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DrawText+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "",
+        "NotoSansCJKsc-Regular.otf",
+        104,
+        "#4b2d16",
+        "#00000000",
+        0,
+        0,
+        "#000000",
+        "left",
+        "top",
+        0,
+        -2,
+        "ltr"
+      ]
+    },
+    {
+      "id": 31,
+      "type": "ImageCompositeMasked",
+      "title": "⑧ 透明文字融入完整画面 · 文字蒙版必连",
+      "pos": [
+        2410,
+        40
+      ],
+      "size": [
+        340,
+        210
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 14
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 15
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "shape": 7,
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        64,
+        96,
+        false
+      ]
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        2840,
+        40
+      ],
+      "size": [
+        350,
+        360
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "⑨ 保存最终融合海报 · 无后续模型",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "Qwen_Promo_Integrated"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "pos": [
+        1510,
+        620
+      ],
+      "size": [
+        430,
+        330
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "说明 · 统一画面＋透明字层",
+      "properties": {
+        "Node name for S&R": "Note"
+      },
+      "widgets_values": [
+        "已取消外加的416px文字底栏；Qwen直接生成完整1088×1440画面。\n②唯一指定原文，③只写产品摄影与背景构图；不再要求模型生成海报标题、按钮或标签。\n字体节点⑦：沿用已安装的Essentials DrawText+，透明背景，img_composite故意不连接。\n⑧：destination接完整底图，source接文字IMAGE，mask必须接文字MASK；只叠字形，不会铺白色矩形。\n当前原文7字，字号104，文字位置x64/y96；适配上方留白。改长文要手动换行、调整字号和留白，检查文字边缘与溢出。\n④amount=1–4，一个采样批次；原生合成广播透明文字到全部图片。\n已有Noto字体可直接沿用，不安装新Python节点。\n上方底图若仍出现模型伪字需要拒收或修补；强化提示词不能代替视觉验收。"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      2,
+      "VAE"
+    ],
+    [
+      4,
+      10,
+      0,
+      5,
+      3,
+      "IMAGE"
+    ],
+    [
+      5,
+      21,
+      0,
+      5,
+      5,
+      "STRING"
+    ],
+    [
+      6,
+      5,
+      2,
+      6,
+      0,
+      "LATENT"
+    ],
+    [
+      7,
+      1,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      8,
+      5,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      5,
+      1,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      10,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      11,
+      7,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      12,
+      3,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      13,
+      20,
+      0,
+      40,
+      1,
+      "STRING"
+    ],
+    [
+      14,
+      8,
+      0,
+      31,
+      0,
+      "IMAGE"
+    ],
+    [
+      15,
+      40,
+      0,
+      31,
+      1,
+      "IMAGE"
+    ],
+    [
+      16,
+      40,
+      1,
+      31,
+      2,
+      "MASK"
+    ],
+    [
+      17,
+      31,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.5,
+      "offset": [
+        20,
+        40
+      ]
+    }
+  },
+  "version": 0.4
+}

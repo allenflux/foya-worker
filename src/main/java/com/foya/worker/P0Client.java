@@ -332,7 +332,7 @@ public final class P0Client {
         return null;
     }
 
-    private static Long longMeta(JsonNode data, JsonNode root, String... fields) throws IOException {
+    static Long longMeta(JsonNode data, JsonNode root, String... fields) throws IOException {
         Long result = null;
         for (JsonNode node : metadataNodes(data, root)) for (String field : fields) if (node.hasNonNull(field)) {
             try {
@@ -345,7 +345,7 @@ public final class P0Client {
         return result;
     }
 
-    private static Boolean boolMeta(JsonNode data, JsonNode root, String... fields) throws IOException {
+    static Boolean boolMeta(JsonNode data, JsonNode root, String... fields) throws IOException {
         Boolean result = null;
         for (JsonNode node : metadataNodes(data, root)) for (String field : fields) if (node.hasNonNull(field)) {
             String value = node.path(field).asText();

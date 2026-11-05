@@ -1,0 +1,201 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "prompt": [
+        "21",
+        0
+      ],
+      "negative_prompt": "新增文字，新增标语，字幕，随机字母，随机数字，乱码，新增水印，主体变形，模糊",
+      "resolution": 0,
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "5",
+        2
+      ],
+      "amount": 1
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "31",
+        0
+      ],
+      "filename_prefix": "Qwen_Promo_ExistingFont"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Screenshot 2026-11-03 at 10.47.40 AM.png"
+    }
+  },
+  "20": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "咖啡还是我的好"
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "<image1>是尺寸参考画布。使用<image2>中的人物或产品制作商业宣传主视觉，保留主体关键特征，背景与配色协调，构图完整。画面不要绘制任何新增文字、标题、字母、数字或标语，文案在生成后用字体另行排版。"
+    }
+  },
+  "31": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "41",
+        0
+      ],
+      "source": [
+        "40",
+        0
+      ],
+      "x": 0,
+      "y": 1024,
+      "resize_source": false
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1088,
+      "height": 1024,
+      "batch_size": 1,
+      "color": 16777215
+    }
+  },
+  "41": {
+    "class_type": "ImagePadForOutpaint",
+    "inputs": {
+      "image": [
+        "8",
+        0
+      ],
+      "left": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 416,
+      "feathering": 0
+    }
+  },
+  "42": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1088,
+      "height": 416,
+      "batch_size": 1,
+      "color": 16775405
+    }
+  },
+  "40": {
+    "class_type": "DrawText+",
+    "inputs": {
+      "text": [
+        "20",
+        0
+      ],
+      "font": "NotoSansCJKsc-Regular.otf",
+      "size": 64,
+      "color": "#3b2415",
+      "background_color": "#00000000",
+      "shadow_distance": 0,
+      "shadow_blur": 0,
+      "shadow_color": "#000000",
+      "horizontal_align": "left",
+      "vertical_align": "top",
+      "offset_x": 48,
+      "offset_y": 40,
+      "direction": "ltr",
+      "img_composite": [
+        "42",
+        0
+      ]
+    }
+  }
+}

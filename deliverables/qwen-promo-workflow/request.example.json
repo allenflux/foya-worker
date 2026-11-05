@@ -1,0 +1,21 @@
+{
+  "copy": {
+    "title": "",
+    "body": ""
+  },
+  "language": "zh-Hans",
+  "allow_mixed_scripts": false,
+  "width": 1080,
+  "height": 1440,
+  "count": 1,
+  "style": "",
+  "design_prompt": "",
+  "assets": [
+    {
+      "path": "materials/replace_with_your_product.png",
+      "role": "product"
+    }
+  ],
+  "font_title": "fonts/NotoSansCJKsc-Regular.otf",
+  "font_body": "fonts/NotoSansCJKsc-Regular.otf"
+}

@@ -23,6 +23,38 @@ public final class WorkerService implements AutoCloseable {
     private final LlmClient llm = new LlmClient();
     private record CachedSummary(Instant created, LlmClient.Summary value) {}
     private final java.util.concurrent.ConcurrentHashMap<String, CachedSummary> summaryCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Set<String> summariesInProgress = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.ExecutorService aiThreads = Executors.newVirtualThreadPerTaskExecutor();
+    private final ScheduledExecutorService aiDeadlines = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("ai-deadlines").factory());
+    private final java.util.concurrent.ConcurrentHashMap<String, AiTask> aiTasks = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int MAX_AI_TASKS = 64;
+    private static final class AiTask {
+        final String id = UUID.randomUUID().toString();
+        final Instant created = Instant.now();
+        final int timeoutSeconds;
+        String state = "running";
+        Map<String,Object> result;
+        java.util.concurrent.Future<?> future;
+        java.util.concurrent.ScheduledFuture<?> deadline;
+        AiTask(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+        synchronized boolean running() { return state.equals("running"); }
+        synchronized void finish(String next, Map<String,Object> value) {
+            if (!running()) return;
+            state = next; result = value;
+            if (deadline != null) deadline.cancel(false);
+        }
+        synchronized void stop(String next, String message) {
+            if (!running()) return;
+            finish(next, Map.of("aiStatus", "failed", "aiText", "", "aiMessage", message));
+            if (future != null) future.cancel(true);
+        }
+        synchronized Map<String,Object> snapshot() {
+            Map<String,Object> value = new LinkedHashMap<>();
+            value.put("id", id); value.put("state", state); value.put("timeoutSeconds", timeoutSeconds);
+            if (result != null) value.put("result", result);
+            return value;
+        }
+    }
     private final Path deliveriesFile;
     private final Map<String,Map<String,Object>> deliveries;
     private final Map<String,Integer> failedPullAttempts = new java.util.concurrent.ConcurrentHashMap<>();
@@ -282,17 +314,23 @@ public final class WorkerService implements AutoCloseable {
             String cacheKey = digest(report.text() + "\n" + config.llmEnabled + "\n" + config.llmBaseUrl + "\n" + config.llmModel
                     + "\n" + config.llmApiKey + "\n" + config.llmTimeoutSeconds);
             if (summaryCache.size() >= 100) summaryCache.clear();
-            CachedSummary cached = summaryCache.compute(cacheKey, (ignored, previous) -> {
-                long ttl = previous != null && "success".equals(previous.value().status()) ? 86400 : 60;
-                if (previous != null && previous.created().plusSeconds(ttl).isAfter(Instant.now())) return previous;
-                Map<String,Object> metrics = new LinkedHashMap<>();
-                Map<String,Object> base = response(report);
-                for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee", "amountsEnabled", "amountSource", "feeComplete", "latestFeeComplete", "missingFeeCount", "channelsBy")) metrics.put(field, base.get(field));
-                metrics.put("timezone", config.timezone);
-                metrics.put("channelsTop10", rankings(report.channels().stream().limit(10).toList(), report.amountsEnabled()));
-                metrics.put("workflowsTop10", rankings(report.workflows().stream().limit(10).toList(), report.amountsEnabled()));
-                return new CachedSummary(Instant.now(), llm.summarize(config, metrics));
-            });
+            CachedSummary cached = summaryCache.get(cacheKey);
+            long ttl = cached != null && "success".equals(cached.value().status()) ? 86400 : 60;
+            if (cached == null || !cached.created().plusSeconds(ttl).isAfter(Instant.now())) {
+                if (!summariesInProgress.add(cacheKey))
+                    return Map.of("text", report.text(), "aiSummary", "", "aiStatus", "failed", "aiMessage", "相同报表的 AI 总结正在生成，请稍后重试。");
+                try {
+                    Map<String,Object> metrics = new LinkedHashMap<>();
+                    Map<String,Object> base = response(report);
+                    for (String field : List.of("startDate", "endDate", "days", "totalCount", "totalFee", "latestCount", "latestFee", "amountsEnabled", "amountSource", "feeComplete", "latestFeeComplete", "missingFeeCount", "channelsBy")) metrics.put(field, base.get(field));
+                    metrics.put("timezone", config.timezone);
+                    metrics.put("channelsTop10", rankings(report.channels().stream().limit(10).toList(), report.amountsEnabled()));
+                    metrics.put("workflowsTop10", rankings(report.workflows().stream().limit(10).toList(), report.amountsEnabled()));
+                    cached = new CachedSummary(Instant.now(), llm.summarize(config, metrics));
+                    // Cancellation must allow the next explicit attempt to retry immediately.
+                    if (!Thread.currentThread().isInterrupted() && !cached.value().message().contains("超时")) summaryCache.put(cacheKey, cached);
+                } finally { summariesInProgress.remove(cacheKey); }
+            }
             summary = cached.value();
         } catch (Exception e) {
             summary = new LlmClient.Summary("failed", "", "AI 总结暂不可用，原始报表保持可发送。");
@@ -302,10 +340,133 @@ public final class WorkerService implements AutoCloseable {
         return Map.of("text", success ? report.text() + "\n\n【AI 数据总结】\n" + summary.text() : report.text(),
                 "aiSummary", success ? summary.text() : "", "aiStatus", success ? "ok" : summary.status(), "aiMessage", summary.message());
     }
+
+    /** Starts a cancellable generation. Its deadline includes report loading and model retries. */
+    public synchronized Map<String,Object> startAiTask(com.fasterxml.jackson.databind.JsonNode input) {
+        if (input == null || !input.isObject()) throw new IllegalArgumentException("AI 请求应为 JSON 对象。");
+        String kind = input.path("kind").asText("");
+        if (!Set.of("report", "tasks").contains(kind)) throw new IllegalArgumentException("AI 总结类型无效。");
+        AppConfig config = configs.snapshot();
+        int seconds = config.llmTimeoutSeconds;
+        if (input.has("timeoutSeconds")) {
+            if (!input.path("timeoutSeconds").isIntegralNumber() || !input.path("timeoutSeconds").canConvertToInt())
+                throw new IllegalArgumentException("AI 超时应为 5–300 秒之间的整数。");
+            seconds = input.path("timeoutSeconds").intValue();
+        }
+        if (seconds < 5 || seconds > 300) throw new IllegalArgumentException("AI 超时应为 5–300 秒之间的整数。");
+        config.llmTimeoutSeconds = seconds;
+        LocalDate date = kind.equals("report") ? endDate(input.path("endDate").asText("")) : null;
+        Map<String,Object> metrics = kind.equals("tasks") ? taskSummaryMetrics(input.path("statistics"), config.timezone) : null;
+        aiTasks.entrySet().removeIf(entry -> !entry.getValue().running() && entry.getValue().created.plusSeconds(900).isBefore(Instant.now()));
+        if (aiTasks.values().stream().filter(AiTask::running).count() >= 4)
+            throw new IllegalStateException("已有 4 个 AI 总结正在生成，请等待完成或取消后再试。");
+        while (aiTasks.size() >= MAX_AI_TASKS) {
+            var oldest = aiTasks.values().stream().filter(task -> !task.running()).min(Comparator.comparing(task -> task.created));
+            if (oldest.isEmpty()) break;
+            aiTasks.remove(oldest.get().id, oldest.get());
+        }
+        AiTask task = new AiTask(seconds);
+        aiTasks.put(task.id, task);
+        synchronized (task) {
+            task.deadline = aiDeadlines.schedule(() -> task.stop("timed_out", "AI 总结达到 " + task.timeoutSeconds + " 秒总超时，已终止请求；原始数据仍可查看。"), seconds, TimeUnit.SECONDS);
+            task.future = aiThreads.submit(() -> {
+                try {
+                    Map<String,Object> result;
+                    if (kind.equals("report")) {
+                        result = new LinkedHashMap<>(summaryResponse(config, report(config, date)));
+                        result.put("aiText", result.getOrDefault("aiSummary", ""));
+                    } else result = taskSummaryResult(llm.summarizeTasks(config, metrics));
+                    task.finish("complete", result);
+                } catch (Exception e) {
+                    task.finish("complete", Map.of("aiStatus", "failed", "aiText", "", "aiMessage", redactSecrets(JobManager.safeError(e))));
+                }
+            });
+        }
+        return task.snapshot();
+    }
+
+    public Map<String,Object> aiTaskStatus(String id) {
+        AiTask task = aiTasks.get(Objects.toString(id, ""));
+        if (task == null) throw new IllegalArgumentException("AI 任务不存在或已过期，请重新生成。");
+        return task.snapshot();
+    }
+
+    public Map<String,Object> cancelAiTask(com.fasterxml.jackson.databind.JsonNode input) {
+        String id = input == null ? "" : input.path("id").asText("");
+        AiTask task = aiTasks.get(id);
+        if (task == null) throw new IllegalArgumentException("AI 任务不存在或已过期。");
+        task.stop("cancelled", "AI 总结已取消，上游请求已终止；原始数据仍可查看。");
+        return task.snapshot();
+    }
+
+    public Map<String,Object> taskSummaryResponse(com.fasterxml.jackson.databind.JsonNode input) {
+        AppConfig config = configs.snapshot();
+        return taskSummaryResult(llm.summarizeTasks(config, taskSummaryMetrics(input.path("statistics"), config.timezone)));
+    }
+
+    private static Map<String,Object> taskSummaryResult(LlmClient.Summary summary) {
+        boolean success = summary.status().equals("success") && !summary.text().isBlank();
+        String message = summary.message().replace("日报统计照常保留", "原始任务统计仍可查看");
+        return Map.of("aiStatus", success ? "ok" : summary.status(), "aiText", success ? summary.text() : "", "aiMessage", message);
+    }
+
+    /** The endpoint accepts aggregates only; raw tasks and arbitrary client fields never reach the model. */
+    private Map<String,Object> taskSummaryMetrics(com.fasterxml.jackson.databind.JsonNode input, String timezone) {
+        if (!input.isObject()) throw new IllegalArgumentException("请先查询任务区间统计，再生成 AI 总结。");
+        if (input.has("complete") && !input.path("complete").asBoolean())
+            throw new IllegalArgumentException("部分状态统计尚未完成，请补齐或缩短查询时间段后再生成 AI 简报。");
+        Map<String,Object> metrics = new LinkedHashMap<>();
+        LocalDateTime start, end;
+        try {
+            start = LocalDateTime.parse(input.path("startTime").asText());
+            end = LocalDateTime.parse(input.path("endTime").asText());
+            if (end.isBefore(start)) throw new DateTimeException("range");
+        } catch (DateTimeException e) { throw new IllegalArgumentException("任务统计时间范围无效。"); }
+        metrics.put("startTime", start.toString()); metrics.put("endTime", end.toString());
+        metrics.put("timezone", timezone); metrics.put("scope", "interval");
+        Map<String,String> filters = new LinkedHashMap<>();
+        for (var field : Map.of("task_type", "taskType", "hash_key", "hashKey", "task_id", "taskId").entrySet()) {
+            var value = input.path("filters").path(field.getKey());
+            if (value.isMissingNode()) value = input.path("filters").path(field.getValue());
+            if (value.isMissingNode()) continue;
+            if (!value.isTextual() || value.textValue().length() > 512 || value.textValue().matches("(?s).*[\\p{Cc}].*"))
+                throw new IllegalArgumentException("AI 筛选条件应为最多 512 字符的文本。");
+            if (!value.textValue().isBlank()) filters.put(field.getKey(), redactSecrets(value.textValue()));
+        }
+        metrics.put("filtered", !filters.isEmpty()); metrics.put("filters", filters);
+        metrics.put("total", nonNegativeCount(input.path("total")));
+        var counts = input.path("counts");
+        if (!counts.isObject() || counts.isEmpty() || counts.size() > 32) throw new IllegalArgumentException("任务状态计数无效。");
+        Map<String,Long> safeCounts = new LinkedHashMap<>();
+        counts.fields().forEachRemaining(entry -> {
+            if (!entry.getKey().matches("-?\\d{1,6}")) throw new IllegalArgumentException("任务状态代码无效。");
+            safeCounts.put(entry.getKey(), nonNegativeCount(entry.getValue()));
+        });
+        metrics.put("counts", safeCounts);
+        long classified = 0;
+        try { for (long count : safeCounts.values()) classified = Math.addExact(classified, count); }
+        catch (ArithmeticException e) { throw new IllegalArgumentException("状态统计合计超出有效范围。"); }
+        long difference = nonNegativeCount(input.path("total")) - classified;
+        metrics.put("snapshotDifference", difference);
+        metrics.put("consistent", difference == 0);
+        metrics.put("statusMeaning", Map.of("2", "成功", "otherCodes", "仅按状态码解读，名称未确认"));
+        metrics.put("snapshotNote", "状态与总数分别查询；snapshotDifference 是查询期间的快照差额，不是其他状态。consistent=false 时不计算占比或成功率，只说明独立计数及差额；非端到端成功率。");
+        return metrics;
+    }
+
+    private static long nonNegativeCount(com.fasterxml.jackson.databind.JsonNode value) {
+        if (!value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0)
+            throw new IllegalArgumentException("任务统计数量应为非负整数。");
+        return value.longValue();
+    }
     private static String digest(String value) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
         catch (Exception e) { throw new IllegalStateException(e); }
     }
-    @Override public void close() { discoveryScheduler.shutdownNow(); scheduler.shutdownNow(); jobs.close(); }
+    @Override public void close() {
+        aiTasks.values().forEach(task -> task.stop("cancelled", "服务已停止，AI 总结已取消。"));
+        aiDeadlines.shutdownNow(); aiThreads.shutdownNow();
+        discoveryScheduler.shutdownNow(); scheduler.shutdownNow(); jobs.close();
+    }
     public static final class MissingCacheException extends IOException { public MissingCacheException(String message) { super(message); } }
 }

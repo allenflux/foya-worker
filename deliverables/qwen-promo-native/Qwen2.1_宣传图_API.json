@@ -1,0 +1,122 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1088,
+      "height": 1440,
+      "batch_size": 1,
+      "color": 16777215
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "prompt": "制作一张用于正常商业推广的宣传设计图。\n\n【素材角色】\n<image1> 是空白目标画布，仅决定输出尺寸和画面比例，不是宣传素材。\n<image2> 是必需的主要宣传素材，保留其中指定人物、产品及品牌标识的关键特征。\n如连接了 <image3> 至 <image10>，它们为额外素材；按下方素材说明使用。没有连接的图片不参与设计。\n\n【设计要求】\n按照指定要求组合素材，设计背景、配色、光影和构图。人物身份、产品形状、颜色、结构及品牌标识保持一致。按目标画布尺寸重新构图，不通过拉伸或裁切关键主体适配画面。\n设计风格有填写时，以该风格为基础，视觉提示词只补充细节。未填写风格时，根据视觉提示词、参考图和素材内容选择适合的风格。标题及正文采用适合设计风格与目标语言的清晰字体。\n\n【文案规则】\n上图文字只能来自下方“指定上图文案”区域，完整保留调用方提供的每一个字、标点、数字、大小写及字形。不得补写标题、口号、卖点、标签，不得从素材提取新的文案，不得翻译、简繁转换、删减或改写。素材中的原有品牌标识保持原样。\n按标题与正文建立清楚的主次层级，合理留白与换行，文字清晰完整、不重叠、不溢出，不遮挡人物面部、产品及重要标识。简体、繁体、英文以及混排均保持原样。\n\n【调用方填写：目标语言】\n简体中文\n\n【调用方填写：设计风格；可以留空】\n\n\n【调用方填写：素材说明与视觉提示词】\n\n\n【调用方填写：指定上图文案；必须填写完整原文】\n<copy>\n\n</copy>\n",
+      "negative_prompt": "misspelled text, missing characters, substituted characters, invented slogans, translated text, simplified-traditional conversion, unreadable typography, overlapping text, overflowing text, tiny illegible letters, text covering face or product, distorted product, altered brand logo, deformed face, malformed hands, duplicated subject, cropped key subject, stretched image, blurry, low quality, compression artifacts, new watermark",
+      "resolution": 0,
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "5",
+        2
+      ],
+      "amount": 1
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "Qwen_Promo"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": ""
+    }
+  }
+}

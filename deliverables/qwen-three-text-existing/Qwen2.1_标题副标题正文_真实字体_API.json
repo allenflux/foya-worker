@@ -1,0 +1,782 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Qwen Image 2.1 基础模型"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Qwen 编码器"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "_meta": {
+      "title": "Qwen VAE"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Screenshot 2026-11-03 at 10.47.40 AM.png"
+    },
+    "_meta": {
+      "title": "① 必需宣传素材 · 已保留当前文件"
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1152,
+      "height": 1536,
+      "batch_size": 1,
+      "color": 16775405
+    },
+    "_meta": {
+      "title": "⑤ 目标画布 · 不追加文字底栏"
+    }
+  },
+  "41": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "promo_layout_1152x1536.png"
+    },
+    "_meta": {
+      "title": "无字构图与配色参考 · 已部署此服务器"
+    }
+  },
+  "20": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "咖啡还是我的好"
+    },
+    "_meta": {
+      "title": "② 标题原文 · 必填，仅绘制输入字形"
+    }
+  },
+  "24": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "okok 哈喽哈喽"
+    },
+    "_meta": {
+      "title": "③ 副标题原文 · 可留空，不补写"
+    }
+  },
+  "30": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": ""
+    },
+    "_meta": {
+      "title": "④ 正文原文 · 可留空，不补写"
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "<image1> 只决定最终画布尺寸与比例；<image2> 是必须保留关键特征的实际宣传主体；<image3> 是不含任何文字的配色与构图参考，不是新增宣传主体。请制作完整、有表现力的无字商业海报底图，保留指定人物身份、产品外形、数量、结构、原有品牌标识与关键颜色。\n\n根据素材统一视觉语言，主体突出且完整。后续真实字体区域的范围由提示词末尾的动态坐标确定，用低纹理、可读的自然底色与无字图形承接；主体主视觉按照动态坐标紧接下方，以大比例填充中下部，避免上方整面空白墙、主体缩在最底端或生硬上下分栏。背景与主体周围自然连贯，允许少量无字色带、曲线、刷痕、纸张或几何层次穿插衔接，形成视觉节奏，避免廉价贴图和杂乱堆砌。\n\n从素材与配色参考提取主色、强调色和中性色，保持品牌色准确，色调协调。统一主光方向、色温、透视和景深，保留自然接触阴影与材质的细微纹理、透明度和光泽，避免塑料化、过曝、死黑、白边或悬浮感。食品饮品保留真实细节与自然诱人的色泽。\n\n本阶段只设计主体、背景与无字图形，绝不绘制标题、副标题、正文、字母、数字、标语、标签、按钮文字、伪字或文字占位符，也不要把这些制作说明写到图片上。完整指定文字会在生成后由真实字体节点绘制。"
+    },
+    "_meta": {
+      "title": "⑥ 无字海报设计要求 · 这里只填视觉"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "negative_prompt": "新增文字，伪文字，乱码，字母，数字，标语，说明文字，文字占位符，新增水印，新增logo，主体变形，数量错误，关键主体裁切，产品拉伸，悬浮，抠图白边，塑料质感，过曝，低清晰度",
+      "resolution": 0,
+      "clip": [
+        "2",
+        0
+      ],
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ],
+      "images.image_3": [
+        "41",
+        0
+      ],
+      "prompt": [
+        "69",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "⑦ Qwen 整体设计 · 不接收标题／副标题／正文"
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "amount": 1,
+      "samples": [
+        "5",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "⑧ 一次出图数量 · amount=1–4"
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 404940743691510,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "⑨ 单次整批采样 · 不绘制文案"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "⑩ 无字底图解码"
+    }
+  },
+  "50": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A([\\u3400-\\u4DBF\\u4E00-\\u9FFF]{4})([\\u3400-\\u4DBF\\u4E00-\\u9FFF]{3})\\Z",
+      "replace": "\\1\n\\2",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "20",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "仅恰好7个汉字的标题软换行为4＋3"
+    }
+  },
+  "51": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": ".",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "50",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "标题空字段仅作内部透明占位"
+    }
+  },
+  "52": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A.*\\S.*\\Z",
+      "replace": [
+        "60",
+        0
+      ],
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": true,
+      "count": 1,
+      "string": [
+        "20",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "标题非空时选指定字色"
+    }
+  },
+  "60": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "#4b2d16"
+    },
+    "_meta": {
+      "title": "标题字色 · #RRGGBB"
+    }
+  },
+  "53": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": "#00000000",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "52",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "标题为空时颜色全透明"
+    }
+  },
+  "40": {
+    "class_type": "DrawText+",
+    "inputs": {
+      "text": [
+        "51",
+        0
+      ],
+      "font": "NotoSerifCJKsc-Bold.otf",
+      "size": 200,
+      "color": [
+        "53",
+        0
+      ],
+      "background_color": "#00000000",
+      "shadow_distance": 0,
+      "shadow_blur": 0,
+      "shadow_color": "#00000000",
+      "horizontal_align": "left",
+      "vertical_align": "top",
+      "offset_x": 0,
+      "offset_y": 0,
+      "direction": "ltr"
+    },
+    "_meta": {
+      "title": "标题 · 真实字体透明层（字号可调）"
+    }
+  },
+  "54": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": ".",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "24",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "副标题空字段仅作内部透明占位"
+    }
+  },
+  "55": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A.*\\S.*\\Z",
+      "replace": [
+        "61",
+        0
+      ],
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": true,
+      "count": 1,
+      "string": [
+        "24",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "副标题非空时选指定字色"
+    }
+  },
+  "61": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "#b96125"
+    },
+    "_meta": {
+      "title": "副标题字色 · #RRGGBB"
+    }
+  },
+  "56": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": "#00000000",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "55",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "副标题为空时颜色全透明"
+    }
+  },
+  "42": {
+    "class_type": "DrawText+",
+    "inputs": {
+      "text": [
+        "54",
+        0
+      ],
+      "font": "NotoSansCJKsc-Regular.otf",
+      "size": 72,
+      "color": [
+        "56",
+        0
+      ],
+      "background_color": "#00000000",
+      "shadow_distance": 0,
+      "shadow_blur": 0,
+      "shadow_color": "#00000000",
+      "horizontal_align": "left",
+      "vertical_align": "top",
+      "offset_x": 0,
+      "offset_y": 0,
+      "direction": "ltr"
+    },
+    "_meta": {
+      "title": "副标题 · 真实字体透明层（字号可调）"
+    }
+  },
+  "57": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": ".",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "30",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "正文空字段仅作内部透明占位"
+    }
+  },
+  "58": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A.*\\S.*\\Z",
+      "replace": [
+        "62",
+        0
+      ],
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": true,
+      "count": 1,
+      "string": [
+        "30",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "正文非空时选指定字色"
+    }
+  },
+  "62": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "#4b2d16"
+    },
+    "_meta": {
+      "title": "正文字色 · #RRGGBB"
+    }
+  },
+  "59": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "regex_pattern": "\\A\\s*\\Z",
+      "replace": "#00000000",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1,
+      "string": [
+        "58",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "正文为空时颜色全透明"
+    }
+  },
+  "43": {
+    "class_type": "DrawText+",
+    "inputs": {
+      "text": [
+        "57",
+        0
+      ],
+      "font": "NotoSansCJKsc-Regular.otf",
+      "size": 40,
+      "color": [
+        "59",
+        0
+      ],
+      "background_color": "#00000000",
+      "shadow_distance": 0,
+      "shadow_blur": 0,
+      "shadow_color": "#00000000",
+      "horizontal_align": "left",
+      "vertical_align": "top",
+      "offset_x": 0,
+      "offset_y": 0,
+      "direction": "ltr"
+    },
+    "_meta": {
+      "title": "正文 · 真实字体透明层（字号可调）"
+    }
+  },
+  "63": {
+    "class_type": "RegexMatch",
+    "inputs": {
+      "regex_pattern": "\\S",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "string": [
+        "24",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "副标题是否有非空白原文"
+    }
+  },
+  "64": {
+    "class_type": "SimpleMath+",
+    "inputs": {
+      "value": "80+a[1]+24",
+      "a": [
+        "40",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "副标题顺排位置"
+    }
+  },
+  "65": {
+    "class_type": "SimpleMath+",
+    "inputs": {
+      "value": "a+(b[1]+20)*c",
+      "a": [
+        "64",
+        0
+      ],
+      "b": [
+        "42",
+        0
+      ],
+      "c": [
+        "63",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "正文顺排位置 · 空副标题不占位"
+    }
+  },
+  "66": {
+    "class_type": "RegexMatch",
+    "inputs": {
+      "regex_pattern": "\\S",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "string": [
+        "30",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "正文是否有非空白原文"
+    }
+  },
+  "67": {
+    "class_type": "SimpleMath+",
+    "inputs": {
+      "value": "a+b[1]*c",
+      "a": [
+        "65",
+        0
+      ],
+      "b": [
+        "43",
+        0
+      ],
+      "c": [
+        "66",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "实际文字区最下沿 · 空正文不占位"
+    }
+  },
+  "68": {
+    "class_type": "SimpleMath+",
+    "inputs": {
+      "value": "a+48",
+      "a": [
+        "67",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "主体紧接文字区的位置"
+    }
+  },
+  "69": {
+    "class_type": "StringFormat",
+    "inputs": {
+      "f_string": "{a}\n\n后续真实字体区域的最下沿为 y={b} 像素，主体从 y={c} 像素附近紧接下方；主视觉大而完整，背景与无字装饰贯通上下，不留空白墙。以上数字和说明都不上图，底图禁止新增文字。",
+      "values.a": [
+        "21",
+        0
+      ],
+      "values.b": [
+        "67",
+        0
+      ],
+      "values.c": [
+        "68",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "只把图层尺寸传给Qwen · 不发送原文字句"
+    }
+  },
+  "70": {
+    "class_type": "SimpleMath+",
+    "inputs": {
+      "value": "a+96",
+      "a": [
+        "67",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "柔和文字底面高度 · 字区后渐隐96px"
+    }
+  },
+  "71": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 1152,
+      "crop": "disabled",
+      "image": [
+        "41",
+        0
+      ],
+      "height": [
+        "70",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "同色构图参考作为文字底面"
+    }
+  },
+  "72": {
+    "class_type": "SolidMask",
+    "inputs": {
+      "value": 1.0,
+      "width": 1152,
+      "height": [
+        "70",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "完整覆盖文字区 · 不改变画布尺寸"
+    }
+  },
+  "73": {
+    "class_type": "FeatherMask",
+    "inputs": {
+      "left": 0,
+      "top": 0,
+      "right": 0,
+      "bottom": 96,
+      "mask": [
+        "72",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "仅在字区后向照片渐隐96px"
+    }
+  },
+  "74": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "x": 0,
+      "y": 0,
+      "resize_source": false,
+      "destination": [
+        "8",
+        0
+      ],
+      "source": [
+        "71",
+        0
+      ],
+      "mask": [
+        "73",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "同画布柔和文字底面 · 无外加底栏"
+    }
+  },
+  "31": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "x": 72,
+      "y": 80,
+      "resize_source": false,
+      "destination": [
+        "74",
+        0
+      ],
+      "source": [
+        "40",
+        0
+      ],
+      "mask": [
+        "40",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "⑪ 标题字形叠入同一画布"
+    }
+  },
+  "32": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "x": 80,
+      "y": [
+        "64",
+        0
+      ],
+      "resize_source": false,
+      "destination": [
+        "31",
+        0
+      ],
+      "source": [
+        "42",
+        0
+      ],
+      "mask": [
+        "42",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "⑫ 副标题字形合成 · 可空"
+    }
+  },
+  "33": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "x": 80,
+      "y": [
+        "65",
+        0
+      ],
+      "resize_source": false,
+      "destination": [
+        "32",
+        0
+      ],
+      "source": [
+        "43",
+        0
+      ],
+      "mask": [
+        "43",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "⑬ 正文字形合成 · 可空"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "Qwen_Promo_ThreeText_Font",
+      "images": [
+        "33",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "⑭ 保存并预览 · 三项原文真实字形"
+    }
+  }
+}

@@ -1,0 +1,2862 @@
+{
+  "id": "61204cc4-0abc-4cfd-ae84-92daef1cd1d0",
+  "revision": 0,
+  "last_node_id": 74,
+  "last_link_id": 65,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "title": "Qwen Image 2.1 基础模型",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_bf16.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "title": "Qwen 编码器",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "title": "Qwen VAE",
+      "pos": [
+        40,
+        370
+      ],
+      "size": [
+        300,
+        65
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3,
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "qwen_image_2.1_vae_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "LoadImage",
+      "title": "① 必需宣传素材 · 已保留当前文件",
+      "pos": [
+        40,
+        540
+      ],
+      "size": [
+        330,
+        370
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "Screenshot 2026-11-03 at 10.47.40 AM.png",
+        "image"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "EmptyImage",
+      "title": "⑤ 目标画布 · 不追加文字底栏",
+      "pos": [
+        40,
+        1450
+      ],
+      "size": [
+        310,
+        150
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyImage",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        1152,
+        1536,
+        1,
+        16775405
+      ]
+    },
+    {
+      "id": 41,
+      "type": "LoadImage",
+      "title": "无字构图与配色参考 · 已部署此服务器",
+      "pos": [
+        40,
+        990
+      ],
+      "size": [
+        330,
+        370
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            5,
+            47
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "promo_layout_1152x1536.png",
+        "image"
+      ]
+    },
+    {
+      "id": 20,
+      "type": "PrimitiveStringMultiline",
+      "title": "② 标题原文 · 必填，仅绘制输入字形",
+      "pos": [
+        420,
+        40
+      ],
+      "size": [
+        450,
+        130
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            14,
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "咖啡还是我的好"
+      ]
+    },
+    {
+      "id": 24,
+      "type": "PrimitiveStringMultiline",
+      "title": "③ 副标题原文 · 可留空，不补写",
+      "pos": [
+        420,
+        230
+      ],
+      "size": [
+        450,
+        130
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            21,
+            22,
+            33
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "okok 哈喽哈喽"
+      ]
+    },
+    {
+      "id": 30,
+      "type": "PrimitiveStringMultiline",
+      "title": "④ 正文原文 · 可留空，不补写",
+      "pos": [
+        420,
+        420
+      ],
+      "size": [
+        450,
+        170
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            27,
+            28,
+            38
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 21,
+      "type": "PrimitiveStringMultiline",
+      "title": "⑥ 无字海报设计要求 · 这里只填视觉",
+      "pos": [
+        420,
+        680
+      ],
+      "size": [
+        450,
+        670
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            43
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "<image1> 只决定最终画布尺寸与比例；<image2> 是必须保留关键特征的实际宣传主体；<image3> 是不含任何文字的配色与构图参考，不是新增宣传主体。请制作完整、有表现力的无字商业海报底图，保留指定人物身份、产品外形、数量、结构、原有品牌标识与关键颜色。\n\n根据素材统一视觉语言，主体突出且完整。后续真实字体区域的范围由提示词末尾的动态坐标确定，用低纹理、可读的自然底色与无字图形承接；主体主视觉按照动态坐标紧接下方，以大比例填充中下部，避免上方整面空白墙、主体缩在最底端或生硬上下分栏。背景与主体周围自然连贯，允许少量无字色带、曲线、刷痕、纸张或几何层次穿插衔接，形成视觉节奏，避免廉价贴图和杂乱堆砌。\n\n从素材与配色参考提取主色、强调色和中性色，保持品牌色准确，色调协调。统一主光方向、色温、透视和景深，保留自然接触阴影与材质的细微纹理、透明度和光泽，避免塑料化、过曝、死黑、白边或悬浮感。食品饮品保留真实细节与自然诱人的色泽。\n\n本阶段只设计主体、背景与无字图形，绝不绘制标题、副标题、正文、字母、数字、标语、标签、按钮文字、伪字或文字占位符，也不要把这些制作说明写到图片上。完整指定文字会在生成后由真实字体节点绘制。"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "TextEncodeQwenImage21",
+      "title": "⑦ Qwen 整体设计 · 不接收标题／副标题／正文",
+      "pos": [
+        960,
+        40
+      ],
+      "size": [
+        460,
+        450
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "name": "images.image_1",
+          "type": "IMAGE",
+          "link": 2,
+          "shape": 7
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3,
+          "shape": 7
+        },
+        {
+          "name": "images.image_2",
+          "type": "IMAGE",
+          "link": 4,
+          "shape": 7
+        },
+        {
+          "name": "images.image_3",
+          "type": "IMAGE",
+          "link": 5,
+          "shape": 7
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 6,
+          "widget": {
+            "name": "prompt"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            9
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextEncodeQwenImage21",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "新增文字，伪文字，乱码，字母，数字，标语，说明文字，文字占位符，新增水印，新增logo，主体变形，数量错误，关键主体裁切，产品拉伸，悬浮，抠图白边，塑料质感，过曝，低清晰度",
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "type": "RepeatLatentBatch",
+      "title": "⑧ 一次出图数量 · amount=1–4",
+      "pos": [
+        960,
+        590
+      ],
+      "size": [
+        310,
+        85
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RepeatLatentBatch",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "title": "⑨ 单次整批采样 · 不绘制文案",
+      "pos": [
+        960,
+        790
+      ],
+      "size": [
+        310,
+        285
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 8
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 9
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 10
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        404940743691510,
+        "randomize",
+        30,
+        3,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "title": "⑩ 无字底图解码",
+      "pos": [
+        960,
+        1190
+      ],
+      "size": [
+        260,
+        80
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 12
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            51
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode",
+        "cnr_id": "comfy-core"
+      }
+    },
+    {
+      "id": 50,
+      "type": "RegexReplace",
+      "title": "仅恰好7个汉字的标题软换行为4＋3",
+      "pos": [
+        1500,
+        -80
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 14,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A([\\u3400-\\u4DBF\\u4E00-\\u9FFF]{4})([\\u3400-\\u4DBF\\u4E00-\\u9FFF]{3})\\Z",
+        "\\1\n\\2",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 51,
+      "type": "RegexReplace",
+      "title": "标题空字段仅作内部透明占位",
+      "pos": [
+        1500,
+        40
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 15,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        ".",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 52,
+      "type": "RegexReplace",
+      "title": "标题非空时选指定字色",
+      "pos": [
+        1500,
+        140
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 16,
+          "widget": {
+            "name": "string"
+          }
+        },
+        {
+          "name": "replace",
+          "type": "STRING",
+          "link": 17,
+          "widget": {
+            "name": "replace"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A.*\\S.*\\Z",
+        "",
+        false,
+        false,
+        true,
+        1
+      ]
+    },
+    {
+      "id": 60,
+      "type": "PrimitiveStringMultiline",
+      "title": "标题字色 · #RRGGBB",
+      "pos": [
+        1500,
+        400
+      ],
+      "size": [
+        450,
+        80
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "#4b2d16"
+      ]
+    },
+    {
+      "id": 53,
+      "type": "RegexReplace",
+      "title": "标题为空时颜色全透明",
+      "pos": [
+        1500,
+        240
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 18,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        "#00000000",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 40,
+      "type": "DrawText+",
+      "title": "标题 · 真实字体透明层（字号可调）",
+      "pos": [
+        1500,
+        550
+      ],
+      "size": [
+        360,
+        510
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "img_composite",
+          "type": "IMAGE",
+          "shape": 7,
+          "link": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 19,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "name": "color",
+          "type": "STRING",
+          "link": 20,
+          "widget": {
+            "name": "color"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            34,
+            55
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            56
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DrawText+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "",
+        "NotoSerifCJKsc-Bold.otf",
+        200,
+        "#4b2d16",
+        "#00000000",
+        0,
+        0,
+        "#00000000",
+        "left",
+        "top",
+        0,
+        0,
+        "ltr"
+      ]
+    },
+    {
+      "id": 54,
+      "type": "RegexReplace",
+      "title": "副标题空字段仅作内部透明占位",
+      "pos": [
+        1900,
+        40
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 21,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            25
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        ".",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 55,
+      "type": "RegexReplace",
+      "title": "副标题非空时选指定字色",
+      "pos": [
+        1900,
+        140
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 22,
+          "widget": {
+            "name": "string"
+          }
+        },
+        {
+          "name": "replace",
+          "type": "STRING",
+          "link": 23,
+          "widget": {
+            "name": "replace"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            24
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A.*\\S.*\\Z",
+        "",
+        false,
+        false,
+        true,
+        1
+      ]
+    },
+    {
+      "id": 61,
+      "type": "PrimitiveStringMultiline",
+      "title": "副标题字色 · #RRGGBB",
+      "pos": [
+        1900,
+        400
+      ],
+      "size": [
+        450,
+        80
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "#b96125"
+      ]
+    },
+    {
+      "id": 56,
+      "type": "RegexReplace",
+      "title": "副标题为空时颜色全透明",
+      "pos": [
+        1900,
+        240
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 24,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            26
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        "#00000000",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 42,
+      "type": "DrawText+",
+      "title": "副标题 · 真实字体透明层（字号可调）",
+      "pos": [
+        1900,
+        550
+      ],
+      "size": [
+        360,
+        510
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "img_composite",
+          "type": "IMAGE",
+          "shape": 7,
+          "link": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 25,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "name": "color",
+          "type": "STRING",
+          "link": 26,
+          "widget": {
+            "name": "color"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            36,
+            58
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            59
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DrawText+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "",
+        "NotoSansCJKsc-Regular.otf",
+        72,
+        "#b96125",
+        "#00000000",
+        0,
+        0,
+        "#00000000",
+        "left",
+        "top",
+        0,
+        0,
+        "ltr"
+      ]
+    },
+    {
+      "id": 57,
+      "type": "RegexReplace",
+      "title": "正文空字段仅作内部透明占位",
+      "pos": [
+        2300,
+        40
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 27,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            31
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        ".",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 58,
+      "type": "RegexReplace",
+      "title": "正文非空时选指定字色",
+      "pos": [
+        2300,
+        140
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 28,
+          "widget": {
+            "name": "string"
+          }
+        },
+        {
+          "name": "replace",
+          "type": "STRING",
+          "link": 29,
+          "widget": {
+            "name": "replace"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            30
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A.*\\S.*\\Z",
+        "",
+        false,
+        false,
+        true,
+        1
+      ]
+    },
+    {
+      "id": 62,
+      "type": "PrimitiveStringMultiline",
+      "title": "正文字色 · #RRGGBB",
+      "pos": [
+        2300,
+        400
+      ],
+      "size": [
+        450,
+        80
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            29
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "#4b2d16"
+      ]
+    },
+    {
+      "id": 59,
+      "type": "RegexReplace",
+      "title": "正文为空时颜色全透明",
+      "pos": [
+        2300,
+        240
+      ],
+      "size": [
+        330,
+        210
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 30,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            32
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexReplace",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\A\\s*\\Z",
+        "#00000000",
+        false,
+        false,
+        false,
+        1
+      ]
+    },
+    {
+      "id": 43,
+      "type": "DrawText+",
+      "title": "正文 · 真实字体透明层（字号可调）",
+      "pos": [
+        2300,
+        550
+      ],
+      "size": [
+        360,
+        510
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "img_composite",
+          "type": "IMAGE",
+          "shape": 7,
+          "link": null
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 31,
+          "widget": {
+            "name": "text"
+          }
+        },
+        {
+          "name": "color",
+          "type": "STRING",
+          "link": 32,
+          "widget": {
+            "name": "color"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            40,
+            62
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            63
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DrawText+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "",
+        "NotoSansCJKsc-Regular.otf",
+        40,
+        "#4b2d16",
+        "#00000000",
+        0,
+        0,
+        "#00000000",
+        "left",
+        "top",
+        0,
+        0,
+        "ltr"
+      ]
+    },
+    {
+      "id": 63,
+      "type": "RegexMatch",
+      "title": "副标题是否有非空白原文",
+      "pos": [
+        2300,
+        1320
+      ],
+      "size": [
+        350,
+        170
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 33,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "matches",
+          "type": "BOOLEAN",
+          "links": [
+            37
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexMatch",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\S",
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "id": 64,
+      "type": "SimpleMath+",
+      "title": "副标题顺排位置",
+      "pos": [
+        1900,
+        1130
+      ],
+      "size": [
+        350,
+        140
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "type": "*",
+          "link": 34,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            35,
+            60
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SimpleMath+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "80+a[1]+24"
+      ]
+    },
+    {
+      "id": 65,
+      "type": "SimpleMath+",
+      "title": "正文顺排位置 · 空副标题不占位",
+      "pos": [
+        2300,
+        1130
+      ],
+      "size": [
+        350,
+        140
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "type": "*",
+          "link": 35,
+          "shape": 7
+        },
+        {
+          "name": "b",
+          "type": "*",
+          "link": 36,
+          "shape": 7
+        },
+        {
+          "name": "c",
+          "type": "*",
+          "link": 37,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            39,
+            64
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SimpleMath+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "a+(b[1]+20)*c"
+      ]
+    },
+    {
+      "id": 66,
+      "type": "RegexMatch",
+      "title": "正文是否有非空白原文",
+      "pos": [
+        2300,
+        1420
+      ],
+      "size": [
+        350,
+        170
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string",
+          "type": "STRING",
+          "link": 38,
+          "widget": {
+            "name": "string"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "matches",
+          "type": "BOOLEAN",
+          "links": [
+            41
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RegexMatch",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "",
+        "\\S",
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "id": 67,
+      "type": "SimpleMath+",
+      "title": "实际文字区最下沿 · 空正文不占位",
+      "pos": [
+        1900,
+        1500
+      ],
+      "size": [
+        350,
+        140
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "type": "*",
+          "link": 39,
+          "shape": 7
+        },
+        {
+          "name": "b",
+          "type": "*",
+          "link": 40,
+          "shape": 7
+        },
+        {
+          "name": "c",
+          "type": "*",
+          "link": 41,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            42,
+            44,
+            46
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SimpleMath+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "a+b[1]*c"
+      ]
+    },
+    {
+      "id": 68,
+      "type": "SimpleMath+",
+      "title": "主体紧接文字区的位置",
+      "pos": [
+        2300,
+        1500
+      ],
+      "size": [
+        350,
+        140
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "type": "*",
+          "link": 42,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            45
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SimpleMath+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "a+48"
+      ]
+    },
+    {
+      "id": 69,
+      "type": "StringFormat",
+      "title": "只把图层尺寸传给Qwen · 不发送原文字句",
+      "pos": [
+        960,
+        1500
+      ],
+      "size": [
+        460,
+        350
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "values.a",
+          "type": "*",
+          "link": 43
+        },
+        {
+          "name": "values.b",
+          "type": "*",
+          "link": 44
+        },
+        {
+          "name": "values.c",
+          "type": "*",
+          "link": 45
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StringFormat",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "{a}\n\n后续真实字体区域的最下沿为 y={b} 像素，主体从 y={c} 像素附近紧接下方；主视觉大而完整，背景与无字装饰贯通上下，不留空白墙。以上数字和说明都不上图，底图禁止新增文字。"
+      ]
+    },
+    {
+      "id": 70,
+      "type": "SimpleMath+",
+      "title": "柔和文字底面高度 · 字区后渐隐96px",
+      "pos": [
+        1500,
+        1500
+      ],
+      "size": [
+        350,
+        140
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "a",
+          "type": "*",
+          "link": 46,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            48,
+            49
+          ]
+        },
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SimpleMath+",
+        "cnr_id": "comfyui_essentials"
+      },
+      "widgets_values": [
+        "a+96"
+      ]
+    },
+    {
+      "id": 71,
+      "type": "ImageScale",
+      "title": "同色构图参考作为文字底面",
+      "pos": [
+        2840,
+        1180
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 38,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 47
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 48,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            52
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScale",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "lanczos",
+        1152,
+        825,
+        "disabled"
+      ]
+    },
+    {
+      "id": 72,
+      "type": "SolidMask",
+      "title": "完整覆盖文字区 · 不改变画布尺寸",
+      "pos": [
+        3240,
+        1180
+      ],
+      "size": [
+        320,
+        160
+      ],
+      "flags": {},
+      "order": 39,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 49,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            50
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SolidMask",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        1.0,
+        1152,
+        825
+      ]
+    },
+    {
+      "id": 73,
+      "type": "FeatherMask",
+      "title": "仅在字区后向照片渐隐96px",
+      "pos": [
+        3240,
+        1400
+      ],
+      "size": [
+        320,
+        180
+      ],
+      "flags": {},
+      "order": 40,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 50
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            53
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FeatherMask",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        0,
+        0,
+        0,
+        96
+      ]
+    },
+    {
+      "id": 74,
+      "type": "ImageCompositeMasked",
+      "title": "同画布柔和文字底面 · 无外加底栏",
+      "pos": [
+        2840,
+        1520
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 41,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 51
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 52
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 53,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            54
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        0,
+        0,
+        false
+      ]
+    },
+    {
+      "id": 31,
+      "type": "ImageCompositeMasked",
+      "title": "⑪ 标题字形叠入同一画布",
+      "pos": [
+        2840,
+        40
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 42,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 54
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 55
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 56,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            57
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        72,
+        80,
+        false
+      ]
+    },
+    {
+      "id": 32,
+      "type": "ImageCompositeMasked",
+      "title": "⑫ 副标题字形合成 · 可空",
+      "pos": [
+        2840,
+        400
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 43,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 57
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 58
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 59,
+          "shape": 7
+        },
+        {
+          "name": "y",
+          "type": "INT",
+          "link": 60,
+          "widget": {
+            "name": "y"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            61
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        80,
+        0,
+        false
+      ]
+    },
+    {
+      "id": 33,
+      "type": "ImageCompositeMasked",
+      "title": "⑬ 正文字形合成 · 可空",
+      "pos": [
+        2840,
+        760
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 44,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 61
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 62
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 63,
+          "shape": 7
+        },
+        {
+          "name": "y",
+          "type": "INT",
+          "link": 64,
+          "widget": {
+            "name": "y"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            65
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageCompositeMasked",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        80,
+        0,
+        false
+      ]
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "title": "⑭ 保存并预览 · 三项原文真实字形",
+      "pos": [
+        3300,
+        40
+      ],
+      "size": [
+        460,
+        800
+      ],
+      "flags": {},
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 65
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveImage",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "Qwen_Promo_ThreeText_Font"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "title": "使用说明 · 现有节点／三项文案／透明合成",
+      "pos": [
+        1500,
+        1870
+      ],
+      "size": [
+        1840,
+        300
+      ],
+      "flags": {},
+      "order": 46,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Note",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "只填写②标题、③副标题、④正文的实际原文；副标题和正文可留空。三项只进入字体节点，不发送给Qwen，模型无法续写这些字段。Qwen负责整体画面与无字图形，生成后叠加真实字体。文字图层高度用于计算文字区底沿及主体起点，仅把视觉要求和坐标数字传给Qwen，不传原文字句。\n同色无字参考作为柔和文字底面，先在同一画布内遮住文字区的窗框或杂乱纹理，在字区最下沿之后向照片渐隐96px。图片尺寸不变，不追加硬白块或文字底栏。\n复用服务器已经安装的ComfyUI Essentials DrawText+与SimpleMath+，没有我们开发的自定义节点，不需新增插件或重载服务。参考图promo_layout_1152x1536.png已由本次任务部署在当前服务器input。\n空字段内部用全透明占位绘制，MASK全零，成品不显示任何占位点。不要把DrawText的img_composite接到底图，保持透明背景与零阴影；三个ImageCompositeMasked必须连接各自MASK，且不反相。\n标题恰好7个汉字时只做4＋3软换行；原输入不改。其他长标题、长副标题和长正文请手动换行，在对应字体节点调整字号，并复核文字未溢出或遮挡主体。本图不提供缺字、长文溢出的自动拒收，不能冒称API预检全部通过。\n①需有实际素材；⑤画布默认1152×1536。⑧amount=1–4只执行一个采样批次，工具栏Batch Count保持1。三次字体合成广播到整批底图，直接保存所有图片，没有OCR拦截或外加文字底栏。\n真实字体保证文字层来自输入；Qwen无字底图仍需目视确认没有额外伪字。原图中的品牌标识按要求保留。"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      2,
+      "VAE"
+    ],
+    [
+      4,
+      10,
+      0,
+      5,
+      3,
+      "IMAGE"
+    ],
+    [
+      5,
+      41,
+      0,
+      5,
+      4,
+      "IMAGE"
+    ],
+    [
+      6,
+      69,
+      0,
+      5,
+      5,
+      "STRING"
+    ],
+    [
+      7,
+      5,
+      2,
+      6,
+      0,
+      "LATENT"
+    ],
+    [
+      8,
+      1,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      9,
+      5,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      10,
+      5,
+      1,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      11,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      12,
+      7,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      13,
+      3,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      14,
+      20,
+      0,
+      50,
+      0,
+      "STRING"
+    ],
+    [
+      15,
+      50,
+      0,
+      51,
+      0,
+      "STRING"
+    ],
+    [
+      16,
+      20,
+      0,
+      52,
+      0,
+      "STRING"
+    ],
+    [
+      17,
+      60,
+      0,
+      52,
+      1,
+      "STRING"
+    ],
+    [
+      18,
+      52,
+      0,
+      53,
+      0,
+      "STRING"
+    ],
+    [
+      19,
+      51,
+      0,
+      40,
+      1,
+      "STRING"
+    ],
+    [
+      20,
+      53,
+      0,
+      40,
+      2,
+      "STRING"
+    ],
+    [
+      21,
+      24,
+      0,
+      54,
+      0,
+      "STRING"
+    ],
+    [
+      22,
+      24,
+      0,
+      55,
+      0,
+      "STRING"
+    ],
+    [
+      23,
+      61,
+      0,
+      55,
+      1,
+      "STRING"
+    ],
+    [
+      24,
+      55,
+      0,
+      56,
+      0,
+      "STRING"
+    ],
+    [
+      25,
+      54,
+      0,
+      42,
+      1,
+      "STRING"
+    ],
+    [
+      26,
+      56,
+      0,
+      42,
+      2,
+      "STRING"
+    ],
+    [
+      27,
+      30,
+      0,
+      57,
+      0,
+      "STRING"
+    ],
+    [
+      28,
+      30,
+      0,
+      58,
+      0,
+      "STRING"
+    ],
+    [
+      29,
+      62,
+      0,
+      58,
+      1,
+      "STRING"
+    ],
+    [
+      30,
+      58,
+      0,
+      59,
+      0,
+      "STRING"
+    ],
+    [
+      31,
+      57,
+      0,
+      43,
+      1,
+      "STRING"
+    ],
+    [
+      32,
+      59,
+      0,
+      43,
+      2,
+      "STRING"
+    ],
+    [
+      33,
+      24,
+      0,
+      63,
+      0,
+      "STRING"
+    ],
+    [
+      34,
+      40,
+      0,
+      64,
+      0,
+      "IMAGE"
+    ],
+    [
+      35,
+      64,
+      0,
+      65,
+      0,
+      "INT"
+    ],
+    [
+      36,
+      42,
+      0,
+      65,
+      1,
+      "IMAGE"
+    ],
+    [
+      37,
+      63,
+      0,
+      65,
+      2,
+      "BOOLEAN"
+    ],
+    [
+      38,
+      30,
+      0,
+      66,
+      0,
+      "STRING"
+    ],
+    [
+      39,
+      65,
+      0,
+      67,
+      0,
+      "INT"
+    ],
+    [
+      40,
+      43,
+      0,
+      67,
+      1,
+      "IMAGE"
+    ],
+    [
+      41,
+      66,
+      0,
+      67,
+      2,
+      "BOOLEAN"
+    ],
+    [
+      42,
+      67,
+      0,
+      68,
+      0,
+      "INT"
+    ],
+    [
+      43,
+      21,
+      0,
+      69,
+      0,
+      "STRING"
+    ],
+    [
+      44,
+      67,
+      0,
+      69,
+      1,
+      "INT"
+    ],
+    [
+      45,
+      68,
+      0,
+      69,
+      2,
+      "INT"
+    ],
+    [
+      46,
+      67,
+      0,
+      70,
+      0,
+      "INT"
+    ],
+    [
+      47,
+      41,
+      0,
+      71,
+      0,
+      "IMAGE"
+    ],
+    [
+      48,
+      70,
+      0,
+      71,
+      1,
+      "INT"
+    ],
+    [
+      49,
+      70,
+      0,
+      72,
+      0,
+      "INT"
+    ],
+    [
+      50,
+      72,
+      0,
+      73,
+      0,
+      "MASK"
+    ],
+    [
+      51,
+      8,
+      0,
+      74,
+      0,
+      "IMAGE"
+    ],
+    [
+      52,
+      71,
+      0,
+      74,
+      1,
+      "IMAGE"
+    ],
+    [
+      53,
+      73,
+      0,
+      74,
+      2,
+      "MASK"
+    ],
+    [
+      54,
+      74,
+      0,
+      31,
+      0,
+      "IMAGE"
+    ],
+    [
+      55,
+      40,
+      0,
+      31,
+      1,
+      "IMAGE"
+    ],
+    [
+      56,
+      40,
+      1,
+      31,
+      2,
+      "MASK"
+    ],
+    [
+      57,
+      31,
+      0,
+      32,
+      0,
+      "IMAGE"
+    ],
+    [
+      58,
+      42,
+      0,
+      32,
+      1,
+      "IMAGE"
+    ],
+    [
+      59,
+      42,
+      1,
+      32,
+      2,
+      "MASK"
+    ],
+    [
+      60,
+      64,
+      0,
+      32,
+      3,
+      "INT"
+    ],
+    [
+      61,
+      32,
+      0,
+      33,
+      0,
+      "IMAGE"
+    ],
+    [
+      62,
+      43,
+      0,
+      33,
+      1,
+      "IMAGE"
+    ],
+    [
+      63,
+      43,
+      1,
+      33,
+      2,
+      "MASK"
+    ],
+    [
+      64,
+      65,
+      0,
+      33,
+      3,
+      "INT"
+    ],
+    [
+      65,
+      33,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "素材与画布",
+      "bounding": [
+        10,
+        -10,
+        360,
+        1660
+      ],
+      "color": "#44665b",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "三项原文＋视觉要求",
+      "bounding": [
+        395,
+        -10,
+        500,
+        1400
+      ],
+      "color": "#5c7790",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "Qwen：只设计无字底图",
+      "bounding": [
+        935,
+        -10,
+        510,
+        1880
+      ],
+      "color": "#76654c",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "现有字体节点：标题／副标题／正文",
+      "bounding": [
+        1475,
+        -120,
+        1230,
+        1910
+      ],
+      "color": "#6a5879",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "柔和底面＋逐层字形合成与成品",
+      "bounding": [
+        2810,
+        -10,
+        990,
+        1840
+      ],
+      "color": "#4c716c",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.32,
+      "offset": [
+        20,
+        150
+      ]
+    }
+  },
+  "version": 0.4
+}

@@ -3,7 +3,8 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
-const viewNames = {overview:'统计概览',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
+const viewNames = {overview:'统计概览',tasks:'P0 任务',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
+let reportAiController = null;
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value) => value == null ? '—' : numberFormat.format(Number(value));
@@ -88,15 +89,72 @@ async function copyText(text) {
 }
 
 async function api(path, options={}) {
+  const {timeoutMs=30000,signal,...requestOptions} = options;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  let timedOut = false;
+  if (signal?.aborted) throw new DOMException('已取消请求。','AbortError');
+  signal?.addEventListener('abort',abort,{once:true});
+  const timer = setTimeout(() => {timedOut=true;controller.abort();},timeoutMs);
   const headers = {'X-Requested-With':'foya-admin',...(options.body ? {'Content-Type':'application/json'}:{}),...options.headers};
-  let response;
-  try {response = await fetch(path,{...options,headers,cache:'no-store'});}
-  catch {throw diagnosticError('无法连接后台服务，请检查服务是否运行。',path,options);}
-  let data;
-  try {data = await response.json();}
-  catch {throw diagnosticError('后台返回格式异常，请复制错误详情反馈。',path,options,response.status);}
-  if (!response.ok) throw diagnosticError(data.error || data.message || `请求失败（${response.status}）`,path,options,response.status,data.errorDetails);
-  return data;
+  try {
+    let response;
+    try {response = await fetch(path,{...requestOptions,headers,signal:controller.signal,cache:'no-store'});}
+    catch(error) {
+      if (controller.signal.aborted) throw error;
+      throw diagnosticError('无法连接后台服务，请检查服务是否运行。',path,options);
+    }
+    let data;
+    try {data = await response.json();}
+    catch(error) {
+      if (controller.signal.aborted) throw error;
+      throw diagnosticError('后台返回格式异常，请复制错误详情反馈。',path,options,response.status);
+    }
+    if (!response.ok) throw diagnosticError(data.error || data.message || `请求失败（${response.status}）`,path,options,response.status,data.errorDetails);
+    return data;
+  } catch(error) {
+    if (timedOut) throw diagnosticError(`请求超过 ${Math.round(timeoutMs/1000)} 秒，已停止等待，请稍后重试。`,path,options);
+    if (signal?.aborted) throw new DOMException('已取消请求。','AbortError');
+    throw error;
+  } finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+}
+
+async function runAiTask(input,{timeoutSeconds=120,signal,onProgress}={}) {
+  const budget = Math.min(300,Math.max(5,Number(timeoutSeconds) || 120));
+  const started = performance.now();
+  let id;
+  let complete = false;
+  const aborted = () => {if(signal?.aborted) throw new DOMException('AI 总结已取消。','AbortError');};
+  const progress = () => {
+    const elapsedSeconds = Math.floor((performance.now()-started)/1000);
+    onProgress?.({elapsedSeconds,remainingSeconds:Math.max(0,budget-elapsedSeconds),timeoutSeconds:budget});
+  };
+  const timer = setInterval(progress,1000);
+  try {
+    aborted();progress();
+    // Always read the start response so an immediately cancelled request can still cancel its server job.
+    const job = await api('/api/ai/start',{method:'POST',body:JSON.stringify({...input,timeoutSeconds:budget}),timeoutMs:10000});
+    id = job.id;
+    if (!id) throw new Error('AI 任务未返回编号，请重试。');
+    while (true) {
+      aborted();progress();
+      const remaining = budget*1000-(performance.now()-started);
+      if (remaining <= 0) return {aiStatus:'failed',aiMessage:`AI 总结超过 ${budget} 秒，已中止生成。`};
+      const current = await api(`/api/ai/status?id=${encodeURIComponent(id)}`,{signal,timeoutMs:Math.min(10000,Math.max(1,remaining))});
+      if (current.state === 'complete') {complete=true;return current.result || {aiStatus:'failed',aiMessage:'AI 未返回总结。'};}
+      if (current.state === 'cancelled') throw new DOMException('AI 总结已取消。','AbortError');
+      if (current.state === 'timed_out') {complete=true;return current.result || {aiStatus:'failed',aiMessage:`AI 总结超过 ${budget} 秒，已中止生成。`};}
+      if (current.state !== 'running') {complete=true;return current.result || {aiStatus:'failed',aiMessage:'AI 生成失败，请稍后重试。'};}
+      await new Promise((resolve,reject) => {
+        const stop = () => {clearTimeout(pause);reject(new DOMException('AI 总结已取消。','AbortError'));};
+        const pause = setTimeout(() => {signal?.removeEventListener('abort',stop);resolve();},Math.min(800,remaining));
+        signal?.addEventListener('abort',stop,{once:true});
+      });
+    }
+  } finally {
+    clearInterval(timer);
+    if (id && !complete) await api('/api/ai/cancel',{method:'POST',body:JSON.stringify({id}),timeoutMs:5000}).catch(() => {});
+  }
 }
 
 async function withButton(selector, fn, loadingText) {
@@ -124,6 +182,7 @@ function setView() {
   document.querySelectorAll('.nav a').forEach((el) => el.classList.toggle('active',el.dataset.view === target));
   $('#breadcrumb-current').textContent = viewNames[target];
   if (target === 'logs') refreshStatus().catch(handleError);
+  if (target === 'tasks') window.P0Tasks?.activate();
 }
 
 function handleError(error,context='页面操作') {showPersistentError(error,context);toast(redactDiagnostic(error.message),true);}
@@ -193,6 +252,7 @@ function updateSubscriptionCounts() {
 }
 
 function renderConfig(config) {
+  reportAiController?.abort();
   state.config = config;
   const form = $('#config-form');
   for(const name of ['p0Endpoint','cacheUploadUrl','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','reportDays','p0MaxAttempts','llmBaseUrl','llmModel','llmTimeoutSeconds']) {
@@ -234,6 +294,8 @@ function renderConfig(config) {
   const maxDate = yesterday(config.timezone || 'Asia/Shanghai');
   $('#end-date').max = maxDate;
   if (!$('#end-date').value || $('#end-date').value > maxDate) $('#end-date').value = maxDate;
+  $('#summary-timeout').value = config.llmTimeoutSeconds || 120;
+  window.P0Tasks?.configure(config);
   renderAiPreview();
   updateActions();
 }
@@ -247,6 +309,7 @@ function updateActions() {
 }
 
 function renderReport(report) {
+  if (state.report?.endDate !== report?.endDate || state.report?.text !== report?.text) reportAiController?.abort();
   if (!report || state.summary?.endDate !== report.endDate || state.summary?.rawText !== report.text) state.summary = null;
   state.report = report;
   const hasData = Boolean(report);
@@ -285,6 +348,7 @@ function renderAiPreview() {
     pending:'正在生成 AI 总结 · 原始统计已保留',
     ok:'AI 总结已生成 · 已加入报表预览',
     failed:'AI 总结暂不可用 · 将照常发送原始日报',
+    cancelled:'AI 总结已取消 · 原始统计已保留',
     disabled:'AI 总结未启用 · 原始日报可正常发送'
   };
   $('#summary-status').textContent = labels[status] || labels.failed;
@@ -379,7 +443,7 @@ function configPayload(includeBots=true) {
   payload.scheduleEnabled = form.elements.scheduleEnabled.checked;
   payload.llmEnabled = form.elements.llmEnabled.checked;
   payload.llmTimeoutSeconds = Number(form.elements.llmTimeoutSeconds.value);
-  if (!Number.isInteger(payload.llmTimeoutSeconds) || payload.llmTimeoutSeconds < 5 || payload.llmTimeoutSeconds > 90) throw new Error('模型请求超时应为 5–90 秒之间的整数。');
+  if (!Number.isInteger(payload.llmTimeoutSeconds) || payload.llmTimeoutSeconds < 5 || payload.llmTimeoutSeconds > 300) throw new Error('模型生成时限应为 5–300 秒之间的整数。');
   if (!payload.llmApiKey) delete payload.llmApiKey;
   payload.clearLlmApiKey = form.elements.clearLlmApiKey.checked;
   if (payload.clearLlmApiKey) delete payload.llmApiKey;
@@ -510,25 +574,40 @@ $('#pull-button').addEventListener('click',() => withButton('#pull-button',async
 $('#end-date').addEventListener('change',() => loadReport());
 $('#test-p0').addEventListener('click',() => withButton('#test-p0',async () => {const result=await api('/api/test/p0',{method:'POST',body:JSON.stringify(configPayload(false))});toast(result.message || 'P0 接口连接正常。');},'正在测试'));
 $('#test-llm').addEventListener('click',() => withButton('#test-llm',async () => {const result=await api('/api/test/llm',{method:'POST',body:JSON.stringify(configPayload(false))});if(result.status === 'failed') showPersistentError(diagnosticError(result.message || 'AI 模型连接失败。','/api/test/llm',{method:'POST'},null,result.errorDetails),'LLM 连接测试');toast(redactDiagnostic(result.message || 'AI 模型服务连接正常。'),result.status === 'failed');},'正在测试'));
+$('#summary-cancel').addEventListener('click',() => reportAiController?.abort());
 $('#summary-button').addEventListener('click',() => withButton('#summary-button',async () => {
   if (!state.report) return;
+  const timeoutSeconds = Number($('#summary-timeout').value);
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 5 || timeoutSeconds > 300) throw new Error('AI 时限应为 5–300 秒。');
   const report = state.report;
   const configReference = state.config;
+  const controller = new AbortController();
+  reportAiController = controller;
   state.summary = {endDate:report.endDate,rawText:report.text,text:report.text,aiStatus:'pending'};
+  $('#summary-cancel').classList.remove('hidden');
+  $('#summary-timeout').disabled = true;
   renderAiPreview();updateActions();
   try {
-    const result = await api('/api/summary',{method:'POST',body:JSON.stringify({endDate:report.endDate})});
+    const result = await runAiTask({kind:'report',endDate:report.endDate},{timeoutSeconds,signal:controller.signal,onProgress:({remainingSeconds}) => {
+      $('#summary-progress').textContent = `剩余 ${remainingSeconds} 秒`;
+    }});
     if (state.config !== configReference || state.report?.endDate !== report.endDate || state.report?.text !== report.text) return;
     state.summary = {...result,endDate:report.endDate,rawText:report.text,text:result.aiStatus === 'ok' ? (result.text || report.text) : report.text};
     renderAiPreview();
-    if (result.aiStatus === 'failed') showPersistentError(diagnosticError(result.aiMessage || 'AI 总结暂不可用，已保留原始日报。','/api/summary',{method:'POST'},null,result.errorDetails),'AI 总结');
-    toast(result.aiStatus === 'ok' ? 'AI 总结已加入预览。' : (result.aiMessage || (result.aiStatus === 'disabled' ? 'AI 总结尚未启用，已保留原始日报。' : 'AI 总结暂不可用，原始日报仍可正常发送。')));
+    if (result.aiStatus === 'failed') showPersistentError(diagnosticError(result.aiMessage || 'AI 总结暂不可用，已保留原始日报。','/api/ai/status',{method:'GET'},null,result.errorDetails),'AI 总结');
+    toast(result.aiStatus === 'ok' ? 'AI 总结已加入预览。' : (result.aiMessage || 'AI 总结未生成，已保留原始日报。'));
   } catch(error) {
     if (state.config === configReference && state.report?.endDate === report.endDate && state.report?.text === report.text) {
-      state.summary = {endDate:report.endDate,rawText:report.text,text:report.text,aiStatus:'failed',aiMessage:error.message};
+      state.summary = {endDate:report.endDate,rawText:report.text,text:report.text,aiStatus:error.name === 'AbortError' ? 'cancelled' : 'failed',aiMessage:error.message};
       renderAiPreview();
     }
+    if (error.name === 'AbortError') {toast('AI 生成已取消。');return;}
     throw error;
+  } finally {
+    if (reportAiController === controller) reportAiController = null;
+    $('#summary-cancel').classList.add('hidden');
+    $('#summary-timeout').disabled = false;
+    $('#summary-progress').textContent = '';
   }
 },'正在生成'));
 $('#send-button').addEventListener('click',() => {

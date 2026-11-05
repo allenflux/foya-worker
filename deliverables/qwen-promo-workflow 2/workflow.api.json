@@ -1,0 +1,101 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "PromoPrepareRequest",
+    "inputs": {
+      "request_json": "{\n  \"copy\": {\n    \"title\": \"\",\n    \"body\": \"\"\n  },\n  \"language\": \"zh-Hans\",\n  \"allow_mixed_scripts\": false,\n  \"width\": 1080,\n  \"height\": 1440,\n  \"count\": 1,\n  \"style\": \"\",\n  \"design_prompt\": \"\",\n  \"assets\": [\n    {\n      \"path\": \"materials/replace_with_your_product.png\",\n      \"role\": \"product\"\n    }\n  ],\n  \"font_title\": \"fonts/NotoSansCJKsc-Regular.otf\",\n  \"font_body\": \"fonts/NotoSansCJKsc-Regular.otf\"\n}"
+    }
+  },
+  "5": {
+    "class_type": "PromoEncodeQwen21",
+    "inputs": {
+      "context": [
+        "4",
+        0
+      ],
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "resolution": 0
+    }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "5",
+        2
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "6",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "PromoComposeAndSave",
+    "inputs": {
+      "images": [
+        "7",
+        0
+      ],
+      "context": [
+        "4",
+        0
+      ],
+      "filename_prefix": "promo"
+    }
+  }
+}

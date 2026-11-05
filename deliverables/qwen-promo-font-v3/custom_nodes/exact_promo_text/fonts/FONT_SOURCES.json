@@ -1,0 +1,9 @@
+{
+  "project": "Noto CJK",
+  "source": "https://github.com/notofonts/noto-cjk",
+  "license": "SIL Open Font License 1.1; see OFL.txt",
+  "sha256": {
+    "NotoSansCJKsc-Regular.otf": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+    "NotoSansCJKtc-Regular.otf": "dce08bd4fd91aa8aa76ed8fea4b694c2dfb8550f67871e326843212ddbeb88b4"
+  }
+}

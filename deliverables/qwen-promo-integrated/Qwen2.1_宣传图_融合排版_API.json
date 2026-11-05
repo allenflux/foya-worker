@@ -1,0 +1,178 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "prompt": [
+        "21",
+        0
+      ],
+      "negative_prompt": "text, typography, Chinese characters, letters, words, numbers, slogans, headlines, subtitles, captions, watermark, new logo, promotional badge, sticker, button, call to action, signboard, advertising graphics, infographic, poster text, collage, split layout, footer panel, separator, frame, deformed product, low quality",
+      "resolution": 0,
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "images.image_2": [
+        "10",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "RepeatLatentBatch",
+    "inputs": {
+      "samples": [
+        "5",
+        2
+      ],
+      "amount": 1
+    }
+  },
+  "7": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "5",
+        1
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "seed": 42,
+      "steps": 30,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "31",
+        0
+      ],
+      "filename_prefix": "Qwen_Promo_Integrated"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Screenshot 2026-11-03 at 10.47.40 AM.png"
+    }
+  },
+  "20": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "咖啡还是我的好"
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "以<image2>的产品为主体，在<image1>限定的画布内拍摄一张竖构图的真实产品静物照片。保留咖啡、可颂、盘子和托盘的外观与数量。主体整体位于画面下半部偏右，奶油米白色背景从上到下连续渐变到暖橙色，柔和自然侧光，真实材质与浅景深。画面上方约三分之一为干净、连续、平整的奶油色留白，背景自然延伸到主体周围。画面仅由实物、托盘、桌面、背景和光影组成。"
+    }
+  },
+  "31": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "8",
+        0
+      ],
+      "source": [
+        "40",
+        0
+      ],
+      "mask": [
+        "40",
+        1
+      ],
+      "x": 64,
+      "y": 96,
+      "resize_source": false
+    }
+  },
+  "4": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1088,
+      "height": 1440,
+      "batch_size": 1,
+      "color": 16775405
+    }
+  },
+  "40": {
+    "class_type": "DrawText+",
+    "inputs": {
+      "text": [
+        "20",
+        0
+      ],
+      "font": "NotoSansCJKsc-Regular.otf",
+      "size": 104,
+      "color": "#4b2d16",
+      "background_color": "#00000000",
+      "shadow_distance": 0,
+      "shadow_blur": 0,
+      "shadow_color": "#000000",
+      "horizontal_align": "left",
+      "vertical_align": "top",
+      "offset_x": 0,
+      "offset_y": -2,
+      "direction": "ltr"
+    }
+  }
+}

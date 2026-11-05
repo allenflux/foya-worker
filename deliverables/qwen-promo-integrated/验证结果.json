@@ -1,0 +1,22 @@
+{
+  "status": "cpu_checks_passed",
+  "copy_text": "咖啡还是我的好",
+  "font_size": 104,
+  "transparent_source": [
+    728,
+    128
+  ],
+  "position": [
+    64,
+    96
+  ],
+  "counts_checked": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "opaque_footer": false,
+  "gpu_generation": "not_run",
+  "background_extra_text": "requires_visual_review"
+}

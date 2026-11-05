@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 public final class WebServer implements AutoCloseable {
     private static final int MAX_BODY = 2 * 1024 * 1024;
     private final WorkerService worker;
+    private final TaskQueryService taskQueries = new TaskQueryService();
     private final HttpServer server;
     private final ExecutorService httpThreads = Executors.newVirtualThreadPerTaskExecutor();
     private final boolean loopbackOnly;
@@ -73,6 +74,11 @@ public final class WebServer implements AutoCloseable {
                     worker.jobs.log("info", "名称、单价映射及金额统计配置已更新"); json(exchange, 200, worker.configs.mappings());
                 }
                 case "GET /api/status" -> json(exchange, 200, worker.status());
+                case "GET /api/tasks" -> json(exchange, 200, taskQueries.list(worker.configs.snapshot(), taskParams(exchange)));
+                case "GET /api/tasks/statistics" -> json(exchange, 200, taskQueries.statistics(worker.configs.snapshot(), taskParams(exchange)));
+                case "POST /api/ai/start" -> json(exchange, 202, worker.startAiTask(body(exchange)));
+                case "GET /api/ai/status" -> json(exchange, 200, worker.aiTaskStatus(query(exchange, "id")));
+                case "POST /api/ai/cancel" -> json(exchange, 200, worker.cancelAiTask(body(exchange)));
                 case "GET /api/report" -> json(exchange, 200, worker.reportResponse(worker.endDate(query(exchange, "endDate"))));
                 case "POST /api/pull" -> {
                     JsonNode input = body(exchange);
@@ -118,6 +124,12 @@ public final class WebServer implements AutoCloseable {
         for (String part : raw.split("&")) { String[] pair = part.split("=", 2); if (pair[0].equals(name)) return pair.length == 2 ? URLDecoder.decode(pair[1], StandardCharsets.UTF_8) : ""; }
         return "";
     }
+    private static Map<String, String> taskParams(HttpExchange exchange) {
+        Map<String, String> params = new java.util.LinkedHashMap<>();
+        for (String key : java.util.List.of("start_time", "end_time", "status", "page", "page_size", "task_type", "hash_key", "task_id"))
+            params.put(key, query(exchange, key));
+        return params;
+    }
     private static JsonNode body(HttpExchange exchange) throws IOException {
         if (!java.util.Objects.toString(exchange.getRequestHeaders().getFirst("Content-Type"), "").toLowerCase(java.util.Locale.ROOT).startsWith("application/json")) throw new IllegalArgumentException("请求内容应为 JSON。");
         byte[] bytes = exchange.getRequestBody().readNBytes(MAX_BODY + 1);
@@ -131,7 +143,7 @@ public final class WebServer implements AutoCloseable {
     }
     private static void staticFile(HttpExchange exchange, String path, String method) throws IOException {
         if (!method.equals("GET") && !method.equals("HEAD")) { json(exchange, 405, Map.of("error", "请求方式不允许。")); return; }
-        String resource = switch (path) { case "/", "/index.html" -> "index.html"; case "/app.js" -> "app.js"; case "/styles.css" -> "styles.css"; default -> null; };
+        String resource = switch (path) { case "/", "/index.html" -> "index.html"; case "/app.js" -> "app.js"; case "/tasks.js" -> "tasks.js"; case "/styles.css" -> "styles.css"; default -> null; };
         if (resource == null) { json(exchange, 404, Map.of("error", "页面不存在。")); return; }
         try (var input = WebServer.class.getResourceAsStream("/web/" + resource)) {
             if (input == null) { json(exchange, 404, Map.of("error", "页面资源未找到。")); return; }

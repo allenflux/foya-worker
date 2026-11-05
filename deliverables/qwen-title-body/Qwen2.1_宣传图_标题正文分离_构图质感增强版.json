@@ -1,0 +1,1101 @@
+{
+  "id": "6b39226c-2dae-432b-952f-9b211669d136",
+  "revision": 0,
+  "last_node_id": 25,
+  "last_link_id": 18,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "title": "Qwen Image 2.1 基础模型",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "UNETLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "qwen_image_2.1_bf16.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "qwen_image_2.1_bf16.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        300,
+        110
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "title": "Qwen 编码器",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "CLIPLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+        "type": "qwen_image",
+        "device": "default"
+      }
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        40,
+        370
+      ],
+      "size": [
+        300,
+        65
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3,
+            11
+          ]
+        }
+      ],
+      "title": "Qwen VAE",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAELoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "qwen_image_2.1_vae_bf16.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+      }
+    },
+    {
+      "id": 4,
+      "type": "EmptyImage",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        300,
+        145
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "title": "② 输出尺寸 · 宽高使用 32 的倍数",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "EmptyImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        1088,
+        1440,
+        1,
+        16777215
+      ],
+      "widgets_values_named": {
+        "width": 1088,
+        "height": 1440,
+        "batch_size": 1,
+        "color": 16777215
+      }
+    },
+    {
+      "id": 5,
+      "type": "TextEncodeQwenImage21",
+      "pos": [
+        1400,
+        40
+      ],
+      "size": [
+        500,
+        450
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 1
+        },
+        {
+          "name": "images.image_1",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "images.image_2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "name": "images.image_3",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": 3
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "title": "⑥ Qwen 整体设计 · 标题与正文分别输入",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "TextEncodeQwenImage21",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "prompt": true
+          },
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "",
+        "错别字，缺字，多字，乱码，重复文字，凭空增加文字，擅自补写正文，额外标语，额外卖点，未经指定的价格或按钮文案，擅自改写文案，翻译文案，简繁转换，字段名上图，说明文字上图，文字重叠，文字溢出，遮挡面部，产品变形，标识变形，低清晰度，主体过小，大片无意义空白，图文割裂，机械上下分栏，无序堆砌，装饰遮挡主体，低质抠图，悬浮感，边缘白边，塑料质感，蜡感，过度磨皮，过度锐化，过曝高光，死黑阴影，光源方向冲突，不自然光晕",
+        0
+      ],
+      "widgets_values_named": {
+        "prompt": "",
+        "negative_prompt": "错别字，缺字，多字，乱码，重复文字，擅自改写文案，翻译文案，文字重叠，文字溢出，遮挡面部，产品变形，标识变形，低清晰度",
+        "resolution": 0
+      }
+    },
+    {
+      "id": 6,
+      "type": "RepeatLatentBatch",
+      "pos": [
+        1400,
+        550
+      ],
+      "size": [
+        300,
+        85
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "title": "⑦ 单次出图数量 · amount=1–4",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "RepeatLatentBatch",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        1
+      ],
+      "widgets_values_named": {
+        "amount": 1
+      }
+    },
+    {
+      "id": 7,
+      "type": "KSampler",
+      "pos": [
+        1980,
+        40
+      ],
+      "size": [
+        300,
+        285
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 6
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 7
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "⑦ 单次批量采样",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "KSampler",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        926977988034425,
+        "randomize",
+        30,
+        3,
+        "euler",
+        "simple",
+        1
+      ],
+      "widgets_values_named": {
+        "seed": 926977988034425,
+        "control_after_generate": "randomize",
+        "steps": 30,
+        "cfg": 3,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1
+      }
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [
+        1980,
+        430
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 10
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "title": "⑧ 解码",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "VAEDecode",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        2350,
+        40
+      ],
+      "size": [
+        420,
+        620
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "title": "⑨ 成品保存与预览",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "SaveImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "Qwen_Promo_TitleBody"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "Qwen_Promo_V2"
+      }
+    },
+    {
+      "id": 10,
+      "type": "LoadImage",
+      "pos": [
+        40,
+        760
+      ],
+      "size": [
+        300,
+        340
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "title": "① 宣传素材 · 已保留当前图片",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "LoadImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "Screenshot 2026-11-03 at 10.47.40 AM.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "Screenshot 2026-11-03 at 10.47.40 AM.png",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 19,
+      "type": "Note",
+      "pos": [
+        1400,
+        740
+      ],
+      "size": [
+        880,
+        330
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "使用说明 · 标题必填／正文可空",
+      "properties": {
+        "Node name for S&R": "Note",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "③ 标题：只填调用方提供的标题原文。当前保留“咖啡还是我的好”。\n④ 正文：可留空；留空时明确要求模型只排标题，不补正文、卖点、标语或按钮文字。要上正文时，填完整指定原文，保留语言与字形。不要填“无”“不需要正文”等说明，这些可能被当成上图文字。\n⑤ 视觉要求：只写风格、构图、配色、字体等，不在此处写标题或正文。\n标题与正文由原生字符串节点直接拼接，不经过文案生成、改写或翻译。Qwen 负责整张海报的设计和绘字，没有额外字体节点、OCR或新插件依赖。\n⑦ amount=1–4：一次采样生成整批；工具栏 Batch Count 保持 1。素材、模型、目标尺寸及采样参数沿用上传的工作流。\n这版通过明确标题／正文边界和空正文规则减少自动补写。纯 Qwen 仍可能漏字、错字或偶发增加文字，不能保证逐字无误；长正文建议检查实际出图。\n构图质感增强版：⑤ 已加入画幅适配、主体与标题呼应、主辅色、无字图形、统一光影、真实材质及边缘融合要求，可按实际素材修改。原文仍只填③和④；正文留空规则保持。"
+      ],
+      "widgets_values_named": {
+        "text": "③只填真正需要出现在图片上的完整文案，不填说明、标题标签或示例。当前留空，填好再运行。\n④只描述素材用途、设计风格、背景配色与构图；语言要求可写在这里。\n文案通过原生文本节点与设计要求分开输入，再原样拼接给Qwen。没有自动改写、提取或翻译。\n②尺寸建议32的倍数。⑥amount=1–4；工具栏Batch Count保持1。\n多素材：复制LoadImage并接编码器下一项image_3，按提示继续添加；image_1为画布、image_2为主素材。\n纯Qwen仍可能产生错字，尤其长段落；此版减少说明文字误入，不宣称保证零错字。"
+      },
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 20,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        420,
+        40
+      ],
+      "size": [
+        450,
+        170
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "title": "③ 标题原文 · 必填，只填要上图的标题",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "咖啡还是我的好"
+      ],
+      "widgets_values_named": {
+        "value": "咖啡还是我的好"
+      },
+      "color": "#263f2c",
+      "bgcolor": "#3b5d43"
+    },
+    {
+      "id": 21,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        420,
+        500
+      ],
+      "size": [
+        450,
+        750
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "title": "⑤ 视觉设计 · 构图／光影／材质／图文融合",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "用 <image2> 的人物或产品，在 <image1> 的目标尺寸内设计一张完整、有表现力的商业宣传海报。以下内容都是画面制作要求，不是上图文案；所有新增文字仅使用后文输入的标题和正文。保留素材中指定人物的身份、产品外形、数量、结构、原有品牌标识及关键颜色。\n\n整体设计：根据素材与调用方明确的风格要求统一视觉语言，让主体、文字与无字图形共同构成画面，兼顾商业吸引力、真实质感与清晰信息。没有指定风格时，从素材的色彩、用途与气质出发选择适合的设计，避免机械套用同一种模板。\n\n构图与节奏：根据目标画幅和实际文案长度安排视觉重心，让主体大而完整、标题有分量，两者紧凑呼应。用适度错位、前后层次与疏密变化建立视线动线，避免主体缩在画面底端、标题悬在远处或中间留下整面空白。保留合理呼吸空间与安全边距，不拉伸、不裁掉关键主体，不以装饰填满所有空隙。\n\n图文融合：标题字体的笔画、字重、比例与画面风格协调；利用主辅色、字号和行距形成清楚的层级，按原文长度自然换行，不改变字形或词序。正文有输入时安排清晰易读的完整文字区；正文为空时不保留正文占位，重新平衡主体和标题。文字与主体在位置、配色和视觉方向上相互呼应，不做生硬的上下拼接，不遮挡人物面部、产品轮廓或品牌关键区域。\n\n配色与图形：从素材中提取主色，搭配一种协调的强调色及中性色，保持品牌颜色准确。允许使用无字色带、曲线、刷痕、渐变、纸张或几何层次与少量点缀，组织画面节奏并衔接图文；所有图形服务于主体和阅读，不新增字样，不堆砌装饰。\n\n光影与材质：统一主光方向、色温、透视和景深，采用柔和而有层次的明暗过渡，保留细节及自然接触阴影。准确表现主体原有材质的细微纹理、透明度、光泽与边缘，避免塑料化、蜡感、过度磨皮或夸张锐化；食品饮品保留真实细节与自然诱人的色泽。主体与背景的亮度、反光和投影相互匹配，边缘融合干净，避免悬浮、白边、抠图感和不自然的光晕。"
+      ],
+      "widgets_values_named": {
+        "value": "在<image1>的目标画布上，用<image2>中的人物或产品制作商业宣传海报，保持主体和品牌标识的关键特征。根据素材搭配风格、背景和配色，主体突出，留白充足，只写标题不要写正文。不要写多余的文字。"
+      }
+    },
+    {
+      "id": 23,
+      "type": "StringConcatenate",
+      "pos": [
+        960,
+        310
+      ],
+      "size": [
+        350,
+        190
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 15
+        },
+        {
+          "name": "string_b",
+          "type": "STRING",
+          "widget": {
+            "name": "string_b"
+          },
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "title": "内部 · 接入正文原文",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "StringConcatenate",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "string_a": true
+          },
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "",
+        "",
+        "」\n正文：「"
+      ],
+      "widgets_values_named": {
+        "string_a": "",
+        "string_b": "\"",
+        "delimiter": ""
+      }
+    },
+    {
+      "id": 22,
+      "type": "StringConcatenate",
+      "pos": [
+        960,
+        40
+      ],
+      "size": [
+        350,
+        210
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 13
+        },
+        {
+          "name": "string_b",
+          "type": "STRING",
+          "widget": {
+            "name": "string_b"
+          },
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "title": "内部 · 视觉要求＋标题原文",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "StringConcatenate",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "string_a": true,
+            "string_b": true
+          },
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "",
+        "",
+        "\n\n新增文字只允许下方两项原文，字段名、引号及设计说明不上图；逐字保留字形、标点、大小写和语言，不翻译、不转换简繁、不改写、不删减。\n标题：「"
+      ],
+      "widgets_values_named": {
+        "string_a": "",
+        "string_b": "",
+        "delimiter": "\n\n图片中的新增文字仅限下面引号内的原文，逐字保留字形、标点、大小写和换行，不补写、不删减、不改写、不翻译，也不从素材提取其他文案；引号本身不要画出来：\n\""
+      }
+    },
+    {
+      "id": 24,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        420,
+        260
+      ],
+      "size": [
+        450,
+        190
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "title": "④ 正文原文 · 选填，留空就只出标题",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "PrimitiveStringMultiline",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        ""
+      ],
+      "widgets_values_named": {
+        "value": "咖啡还是我的好"
+      },
+      "color": "#263f2c",
+      "bgcolor": "#3b5d43"
+    },
+    {
+      "id": 25,
+      "type": "StringConcatenate",
+      "pos": [
+        960,
+        560
+      ],
+      "size": [
+        350,
+        220
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "title": "内部 · 禁止自动补写，按空正文规则排版",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.37.4",
+        "Node name for S&R": "StringConcatenate",
+        "ue_properties": {
+          "widget_ue_connectable": {
+            "string_a": true
+          },
+          "version": "7.8",
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "",
+        "」\n正文为空或只有空白时：整张图片只排标题，不生成正文、卖点、标语、价格、店名或按钮文字，也不从素材提取文案；取消正文占位，把版式重新设计完整。正文非空时：仅排给定标题和完整正文，清晰分层，不补写其他文字。只设计版式，不创作文案。",
+        ""
+      ],
+      "widgets_values_named": {
+        "string_a": "",
+        "string_b": "\"",
+        "delimiter": ""
+      }
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      5,
+      0,
+      "CLIP"
+    ],
+    [
+      2,
+      4,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      4,
+      "VAE"
+    ],
+    [
+      4,
+      10,
+      0,
+      5,
+      2,
+      "IMAGE"
+    ],
+    [
+      5,
+      5,
+      2,
+      6,
+      0,
+      "LATENT"
+    ],
+    [
+      6,
+      1,
+      0,
+      7,
+      0,
+      "MODEL"
+    ],
+    [
+      7,
+      5,
+      0,
+      7,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      5,
+      1,
+      7,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      6,
+      0,
+      7,
+      3,
+      "LATENT"
+    ],
+    [
+      10,
+      7,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      11,
+      3,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      12,
+      8,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      13,
+      21,
+      0,
+      22,
+      0,
+      "STRING"
+    ],
+    [
+      14,
+      20,
+      0,
+      22,
+      1,
+      "STRING"
+    ],
+    [
+      15,
+      22,
+      0,
+      23,
+      0,
+      "STRING"
+    ],
+    [
+      16,
+      25,
+      0,
+      5,
+      5,
+      "STRING"
+    ],
+    [
+      17,
+      24,
+      0,
+      23,
+      1,
+      "STRING"
+    ],
+    [
+      18,
+      23,
+      0,
+      25,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "标题／正文／设计 · 只改这里",
+      "bounding": [
+        395,
+        -15,
+        500,
+        1305
+      ],
+      "color": "#5c7790",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "内部拼接 · 不需要填写",
+      "bounding": [
+        935,
+        -15,
+        400,
+        850
+      ],
+      "color": "#4c565f",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.46,
+      "offset": [
+        20,
+        50
+      ]
+    },
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "frontendVersion": "1.52.7",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4,
+  "seed_widgets": {
+    "7": 0
+  }
+}
