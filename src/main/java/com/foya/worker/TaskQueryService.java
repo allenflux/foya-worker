@@ -49,8 +49,9 @@ public final class TaskQueryService {
             String hash = text(row, "hash_key", "hashKey");
             String type = text(row, "task_type", "taskType", "type");
             row.put("channelName", hash.isBlank() ? "未分類" : config.channelNames.getOrDefault(hash, hash));
-            row.put("workflowName", config.workflowNames.getOrDefault(type,
-                    text(row, "workflow_name").isBlank() ? type : text(row, "workflow_name")));
+            String workflowName = text(row, "workflow_name", "workflowName");
+            if (workflowName.isBlank()) workflowName = Objects.toString(config.workflowNames.get(type), "");
+            row.put("workflowName", workflowName);
             rows.add(row);
         }
         Map<String, Object> response = base(config, window);

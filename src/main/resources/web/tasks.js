@@ -30,7 +30,8 @@ window.P0Tasks = (() => {
   };
   const scalar = (value) => typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
   const taskId = (row) => scalar(first(row,['task_id','taskId','uuid','id']));
-  const workflow = (row) => scalar(first(row,['task_type','taskType','workflow','type']));
+  const taskType = (row) => scalar(first(row,['task_type','taskType','type']));
+  const workflowName = (row) => scalar(first(row,['workflow_name','workflowName']));
   const channel = (row) => scalar(first(row,['hash_key','hashKey','user_hash','userHash']));
   const statusLabel = (value) => String(value) === '2' ? '成功 · 2' : `状态 ${value ?? '未知'}`;
   const intervalKey = (query) => JSON.stringify([query.start_time,query.end_time,query.task_type,query.hash_key,query.task_id,config?.timezone]);
@@ -142,7 +143,7 @@ window.P0Tasks = (() => {
     el('tasks-page-size').disabled = listBusy;
     el('tasks-export').disabled = listBusy || !pageData?.items?.length;
     el('tasks-ai-generate').disabled = !statistics || statistics.complete === false || statsBusy || !!aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured;
-    el('tasks-ai-generate').textContent = aiController ? '正在生成' : '生成简报';
+    el('tasks-ai-generate').textContent = aiController ? '正在生成' : '重新生成';
   }
 
   function renderStats() {
@@ -161,7 +162,11 @@ window.P0Tasks = (() => {
 
   async function loadStatistics(query, force=false) {
     const key = intervalKey(query);
-    if (!force && statistics && statistics.complete !== false && statisticsKey === key) return;
+    if (!force && statistics && statistics.complete !== false && statisticsKey === key) {
+      stopAi();
+      void generateAi();
+      return;
+    }
     statsController?.abort();
     statsController = new AbortController();
     const sequence = ++statsSequence;
@@ -181,13 +186,17 @@ window.P0Tasks = (() => {
       const note = response.complete === false ? ' · 部分状态统计未完成，请缩短时间段或重试' : difference != null && Number(difference) !== 0 ? ` · 状态统计与总数差 ${fmt(difference)}，任务状态可能在查询期间变化` : '';
       el('tasks-stats-caption').textContent = `时间段统计 · ${filterCaption(query) ? '匹配条件的全部状态' : '全部状态'}${note} · ${config?.timezone || response.timezone}`;
       el('tasks-stats-retry').classList.toggle('hidden',response.complete !== false && response.consistent !== false);
-      el('tasks-ai-scope').textContent = response.complete === false ? '部分状态统计尚未完成，补齐统计后可生成 AI 简报。' : config?.llmEnabled && config?.llmApiKeyConfigured ? '基于所选时间段及筛选条件的状态数量与占比生成，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
+      el('tasks-ai-scope').textContent = response.complete === false ? '部分状态统计尚未完成，补齐后自动生成 AI 简报。' : config?.llmEnabled && config?.llmApiKeyConfigured ? '查询后自动生成，基于所选条件的状态汇总，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
     } catch (error) {
       if (sequence !== statsSequence || error.name === 'AbortError') return;
       el('tasks-stats-caption').textContent = `统计未完成：${errorText(error,'P0 时间段统计')}`;
       el('tasks-stats-retry').classList.remove('hidden');
     } finally {
-      if (sequence === statsSequence) {statsBusy=false;renderStats();}
+      if (sequence === statsSequence) {
+        statsBusy=false;
+        renderStats();
+        void generateAi();
+      }
     }
   }
 
@@ -256,19 +265,23 @@ window.P0Tasks = (() => {
     return `<span class="badge border fw-normal ${color}">${esc(statusLabel(value === '' ? '未知' : value))}</span>`;
   }
 
+  function copyableValue(value,index,field,label) {
+    return `<div class="d-flex align-items-start gap-1"><span class="tasks-full-value flex-grow-1${['taskType','hashKey','userId'].includes(field) ? ' font-monospace text-body-secondary' : ''}">${esc(value || '未提供')}</span>${value ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy flex-shrink-0" data-task-copy="${index}" data-task-copy-field="${field}" aria-label="复制 ${label}" title="复制 ${label}"><svg><use href="#i-copy"/></svg></button>` : ''}</div>`;
+  }
+
   function renderRows() {
     const items = Array.isArray(pageData?.items) ? pageData.items : [];
     const keyword = el('tasks-keyword').value.trim().toLocaleLowerCase();
     const rows = items.map((row,index) => ({row,index})).filter(({row}) => !keyword || JSON.stringify(row).toLocaleLowerCase().includes(keyword));
     el('tasks-rows').innerHTML = rows.map(({row,index}) => {
       const id = taskId(row);
-      const type = workflow(row);
+      const type = taskType(row);
       const hash = channel(row);
       const name = scalar(row.channelName || hash || '未分類');
       const created = first(row,['created_at','createdAt','create_time','createTime','creation_time','created_time']);
       const updated = first(row,['updated_at','updatedAt','update_time','finished_at','completed_at']);
       const user = scalar(first(row,['user_id','userId','user_identifier','userIdentifier']));
-      return `<tr><td><div class="d-flex align-items-center gap-1 mb-1"><span class="font-monospace tasks-task-id tasks-clip" title="${esc(id)}">${esc(compact(id)) || '未提供任务 ID'}</span>${id ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy" data-task-copy="${index}" aria-label="复制任务 ID"><svg><use href="#i-copy"/></svg></button>` : ''}</div><span class="tasks-content text-body-secondary">${esc(contentSummary(row))}</span></td><td><span class="tasks-clip" title="${esc(row.workflowName || type)}">${esc(row.workflowName || type || '未提供')}</span>${row.workflowName && row.workflowName !== type ? `<span class="tasks-clip font-monospace text-body-secondary mt-1" title="${esc(type)}">${esc(type)}</span>` : ''}</td><td>${statusBadge(row)}</td><td><span class="tasks-clip" title="${esc(name)}">${esc(name)}</span>${hash ? `<span class="tasks-clip font-monospace text-body-secondary mt-1" title="HashKey: ${esc(hash)}">${esc(compact(hash))}</span>` : ''}${user ? `<span class="tasks-clip text-body-secondary mt-1" title="用户: ${esc(user)}">用户 ${esc(compact(user))}</span>` : ''}</td><td><span class="d-block text-nowrap">${esc(displayTime(created))}</span>${updated ? `<span class="d-block text-body-secondary mt-1 text-nowrap" title="更新时间">更新 ${esc(displayTime(updated))}</span>` : '<span class="text-body-secondary small">创建时间</span>'}</td><td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-task-detail="${index}">查看</button></td></tr>`;
+      return `<tr><td><div class="d-flex align-items-center gap-1 mb-1"><span class="font-monospace tasks-task-id tasks-clip" title="${esc(id)}">${esc(compact(id)) || '未提供任务 ID'}</span>${id ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy" data-task-copy="${index}" aria-label="复制任务 ID"><svg><use href="#i-copy"/></svg></button>` : ''}</div><span class="tasks-content text-body-secondary">${esc(contentSummary(row))}</span></td><td>${copyableValue(workflowName(row),index,'workflowName','Workflow name')}</td><td>${copyableValue(type,index,'taskType','Task type')}</td><td>${statusBadge(row)}</td><td>${name !== hash ? copyableValue(name,index,'channelName','渠道名称') : ''}${hash ? `<div${name !== hash ? ' class="mt-1"' : ''}>${copyableValue(hash,index,'hashKey','HashKey')}</div>` : ''}${user ? `<div class="mt-1"><span class="small text-body-secondary">用户标识</span>${copyableValue(user,index,'userId','用户标识')}</div>` : ''}</td><td><span class="d-block text-nowrap">${esc(displayTime(created))}</span>${updated ? `<span class="d-block text-body-secondary mt-1 text-nowrap" title="更新时间">更新 ${esc(displayTime(updated))}</span>` : '<span class="text-body-secondary small">创建时间</span>'}</td><td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-task-detail="${index}">查看</button></td></tr>`;
     }).join('');
     el('tasks-empty').classList.toggle('hidden',rows.length > 0);
     el('tasks-empty').querySelector('p').textContent = keyword ? '当前页没有匹配的任务，请修改关键词或查看其他页。' : '该条件下暂无任务，可调整时间或状态。';
@@ -293,7 +306,7 @@ window.P0Tasks = (() => {
     if (!row) return;
     detail = row;
     const fields = [
-      ['任务 ID',taskId(row)],['记录 UUID',row.uuid],['工作流',row.workflowName || workflow(row)],['原始类型',workflow(row)],
+      ['任务 ID',taskId(row)],['记录 UUID',row.uuid],['Workflow name',workflowName(row)],['Task type',taskType(row)],
       ['状态',statusLabel(first(row,['status','task_status','taskStatus']))],['渠道',row.channelName || '未分類'],['HashKey',channel(row)],
       ['用户标识',first(row,['user_id','userId','user_identifier'])],['创建时间',displayTime(first(row,['created_at','createdAt','create_time']))],
       ['更新时间',displayTime(first(row,['updated_at','updatedAt','update_time']))],['ComfyUI 地址',first(row,['comfyui_url','comfyui_address','comfyuiUrl','comfyuiAddress','comfyui'])],
@@ -306,7 +319,7 @@ window.P0Tasks = (() => {
 
   function exportPage() {
     if (!pageData?.items?.length) return;
-    const rows = [['任务ID','UUID','原始工作流','工作流名称','状态','HashKey','渠道','创建时间','完整数据'],...pageData.items.map((row) => [taskId(row),row.uuid,workflow(row),row.workflowName,first(row,['status','task_status']),channel(row),row.channelName,first(row,['created_at','createdAt','create_time']),JSON.stringify(row)])];
+    const rows = [['任务ID','UUID','Task type','Workflow name','状态','HashKey','渠道','创建时间','完整数据'],...pageData.items.map((row) => [taskId(row),row.uuid,taskType(row),workflowName(row),first(row,['status','task_status']),channel(row),row.channelName,first(row,['created_at','createdAt','create_time']),JSON.stringify(row)])];
     const cell = (value) => {
       const text = scalar(value);
       return `"${(/^[=+\-@\t\r]/.test(text) ? "'" + text : text).replace(/"/g,'""')}"`;
@@ -319,7 +332,7 @@ window.P0Tasks = (() => {
   }
 
   async function generateAi() {
-    if (!statistics || statistics.complete === false || aiController) return;
+    if (!statistics || statistics.complete === false || statsBusy || aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured) return;
     const captured = statistics;
     const sequence = ++aiSequence;
     aiController = new AbortController();
@@ -371,7 +384,7 @@ window.P0Tasks = (() => {
       }
       el('tasks-ai-timeout').value = timeout;
     }
-    el('tasks-ai-scope').textContent = config.llmEnabled && config.llmApiKeyConfigured ? '基于所选时间段及筛选条件的状态数量与占比生成，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
+    el('tasks-ai-scope').textContent = config.llmEnabled && config.llmApiKeyConfigured ? '查询后自动生成，基于所选条件的状态汇总，不包含任务原文。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
     updateActions();
     if (location.hash === '#tasks' && !applied) activate();
   }
@@ -399,8 +412,15 @@ window.P0Tasks = (() => {
     if (!button) return;
     if (button.dataset.taskDetail !== undefined) showDetail(Number(button.dataset.taskDetail));
     if (button.dataset.taskCopy !== undefined) {
-      try {await copyText(taskId(pageData.items[Number(button.dataset.taskCopy)]));toast('任务 ID 已复制。');}
-      catch(error) {errorText(error,'复制任务 ID');}
+      const row = pageData?.items?.[Number(button.dataset.taskCopy)];
+      if (!row) return;
+      const field = button.dataset.taskCopyField || 'taskId';
+      const values = {taskId:[taskId(row),'任务 ID'],workflowName:[workflowName(row),'Workflow name'],taskType:[taskType(row),'Task type'],channelName:[scalar(row.channelName || channel(row) || '未分類'),'渠道名称'],hashKey:[channel(row),'HashKey'],userId:[scalar(first(row,['user_id','userId','user_identifier','userIdentifier'])),'用户标识']};
+      if (!Object.hasOwn(values,field)) return;
+      const [value,label] = values[field];
+      if (!value) return;
+      try {await copyText(value);toast(`${label} 已复制。`);}
+      catch(error) {errorText(error,`复制 ${label}`);}
     }
   });
   el('tasks-copy-detail').addEventListener('click',async() => {

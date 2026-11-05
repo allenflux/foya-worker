@@ -72,6 +72,26 @@ class TaskQueryServiceTest {
         assertEquals("full content", result.path("items").get(0).path("prompt").asText());
     }
 
+    @Test void actualWorkflowNamesTakePriorityAndMissingNamesDoNotRepeatTaskType() throws Exception {
+        serve(q -> """
+                {"total_count":4,"tasks":[
+                  {"task_type":"configured_type","workflow_name":"实际工作流名称","workflowName":"别名工作流名称"},
+                  {"task_type":"configured_type","workflowName":"接口别名工作流名称"},
+                  {"task_type":"configured_type"},
+                  {"task_type":"unmapped_type"}
+                ]}
+                """);
+        config.workflowNames.put("configured_type", "配置映射名称");
+        JsonNode rows = Json.MAPPER.valueToTree(new TaskQueryService().list(config, params())).path("items");
+        assertEquals("实际工作流名称", rows.get(0).path("workflowName").asText());
+        assertEquals("接口别名工作流名称", rows.get(1).path("workflowName").asText());
+        assertEquals("配置映射名称", rows.get(2).path("workflowName").asText());
+        assertEquals("", rows.get(3).path("workflowName").asText());
+        for (int index = 0; index < 3; index++)
+            assertEquals("configured_type", rows.get(index).path("task_type").asText());
+        assertEquals("unmapped_type", rows.get(3).path("task_type").asText());
+    }
+
     @Test void statisticsUseGlobalMetadataForEveryStatusAndIgnoreListStatusAndPagination() throws Exception {
         Set<String> requested = ConcurrentHashMap.newKeySet();
         serve(q -> {
