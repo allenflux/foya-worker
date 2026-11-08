@@ -89,6 +89,9 @@ class AiTaskTest {
             JsonNode metrics = Json.MAPPER.readTree(received.get().path("messages").path(1).path("content").asText());
             assertEquals(2, metrics.path("counts").path("0").asInt());
             assertEquals("interval", metrics.path("scope").asText());
+            assertEquals("处理中", metrics.path("statusMeaning").path("0").asText());
+            assertEquals("旧状态（历史处理中，现已少用）", metrics.path("statusMeaning").path("1").asText());
+            assertEquals("加水印中", metrics.path("statusMeaning").path("3").asText());
             assertTrue(metrics.path("consistent").asBoolean());
             assertEquals(0, metrics.path("snapshotDifference").asLong());
             assertTrue(metrics.path("filtered").asBoolean());

@@ -10,7 +10,7 @@ window.P0Tasks = (() => {
   let applied = null;
   let pageData = null;
   let statistics = null;
-  let statisticsKey = '';
+  let quickRange = null;
   let listController = null;
   let statsController = null;
   let aiController = null;
@@ -33,8 +33,7 @@ window.P0Tasks = (() => {
   const taskType = (row) => scalar(first(row,['task_type','taskType','type']));
   const workflowName = (row) => scalar(first(row,['workflow_name','workflowName']));
   const channel = (row) => scalar(first(row,['hash_key','hashKey','user_hash','userHash']));
-  const statusLabel = (value) => String(value) === '-1' ? '失败 · -1' : String(value) === '2' ? '成功 · 2' : `状态 ${value ?? '未知'}`;
-  const intervalKey = (query) => JSON.stringify([query.start_time,query.end_time,query.task_type,query.hash_key,query.task_id,config?.timezone]);
+  const statusLabel = (value) => ({'-1':'失败 · -1','0':'处理中 · 0','1':'旧状态 · 1','2':'成功 · 2','3':'加水印中 · 3'}[String(value)] || `状态 ${value ?? '未知'}`);
   const filterCaption = (query) => [['工作流',query.task_type],['HashKey',query.hash_key],['任务 ID',query.task_id]].filter(([,value]) => value).map(([name,value]) => `${name} ${compact(value,32)}`).join(' · ');
   const displayTime = (value) => {
     if (value === '' || value == null) return '—';
@@ -53,6 +52,7 @@ window.P0Tasks = (() => {
   }
 
   function setRange(kind) {
+    quickRange = kind;
     const now = new Date();
     const end = nowLocal(now);
     let start = `${end.slice(0,10)}T00:00:00`;
@@ -80,8 +80,16 @@ window.P0Tasks = (() => {
     return {start_time:`${seconds(start)}.000000`,end_time:`${seconds(end)}.999999`,status:el('tasks-status').value,task_type:el('tasks-type').value.trim(),hash_key:el('tasks-hash').value.trim(),task_id:el('tasks-id').value.trim(),page:1,page_size:Number(el('tasks-page-size').value)};
   }
 
-  function edited() {
-    el('tasks-query-note').textContent = applied ? '条件已修改，点击「查询」后应用。' : '支持精确到秒；统计按所选时间段计算。';
+  function queryNote() {
+    return quickRange === 'yesterday' ? '按当前日期查询昨天完整一天' : quickRange ? '查询时自动更新至当前时间' : '固定起止时间；按任务创建时间筛选';
+  }
+
+  function edited(event) {
+    if (['tasks-start','tasks-end'].includes(event?.target?.id)) {
+      quickRange = null;
+      document.querySelectorAll('[data-task-range]').forEach((button) => button.classList.remove('active'));
+    }
+    el('tasks-query-note').textContent = applied ? '条件已修改，点击「查询」后应用。' : queryNote();
   }
 
   async function get(path, signal) {
@@ -160,19 +168,12 @@ window.P0Tasks = (() => {
     updateActions();
   }
 
-  async function loadStatistics(query, force=false) {
-    const key = intervalKey(query);
-    if (!force && statistics && statistics.complete !== false && statisticsKey === key) {
-      stopAi();
-      void generateAi();
-      return;
-    }
+  async function loadStatistics(query) {
     statsController?.abort();
     statsController = new AbortController();
     const sequence = ++statsSequence;
     stopAi();
     statistics = null;
-    statisticsKey = key;
     statsBusy = true;
     el('tasks-ai-output').classList.add('hidden');
     el('tasks-stats-caption').textContent = '正在统计完整时间段…';
@@ -208,7 +209,7 @@ window.P0Tasks = (() => {
     pageData = null;
     listBusy = true;
     el('tasks-list-error').classList.add('hidden');
-    el('tasks-query-note').textContent = '支持精确到秒；统计按所选时间段计算。';
+    el('tasks-query-note').textContent = queryNote();
     el('tasks-applied').textContent = `${displayTime(query.start_time)} — ${displayTime(query.end_time)} · ${query.status === '' ? '全部状态' : statusLabel(query.status)}${filterCaption(query) ? ' · ' + filterCaption(query) : ''}`;
     el('tasks-result-count').textContent = '查询中';
     el('tasks-rows').innerHTML = '';
@@ -234,11 +235,12 @@ window.P0Tasks = (() => {
     }
   }
 
-  async function search(forceStats=true) {
+  async function search() {
     try {
+      if (quickRange) setRange(quickRange);
       const query = inputQuery();
       el('tasks-keyword').value = '';
-      await Promise.allSettled([loadList(query),loadStatistics(query,forceStats)]);
+      await Promise.allSettled([loadList(query),loadStatistics(query)]);
     } catch (error) {errorText(error,'P0 查询条件');}
   }
 
@@ -370,7 +372,7 @@ window.P0Tasks = (() => {
     el('tasks-zone').textContent = config.timezone || 'Asia/Shanghai';
     if (firstConfig || changed) {
       listController?.abort();statsController?.abort();listSequence++;statsSequence++;stopAi();
-      applied=null;pageData=null;statistics=null;statisticsKey='';listBusy=false;statsBusy=false;
+      applied=null;pageData=null;statistics=null;listBusy=false;statsBusy=false;
       if (firstConfig || previousConfig?.timezone !== config.timezone) setRange('today');
       renderStats();
       el('tasks-rows').innerHTML='';el('tasks-result-count').textContent='待查询';el('tasks-page-info').textContent='—';
@@ -403,12 +405,12 @@ window.P0Tasks = (() => {
   el('tasks-filter').addEventListener('input',edited);
   el('tasks-reset').addEventListener('click',() => {el('tasks-status').value='';el('tasks-keyword').value='';for(const id of ['tasks-type','tasks-hash','tasks-id']) el(id).value='';el('tasks-more-filters').open=false;setRange('today');search();});
   document.querySelectorAll('[data-task-range]').forEach((button) => button.addEventListener('click',() => {setRange(button.dataset.taskRange);search();}));
-  document.querySelectorAll('[data-task-status]').forEach((button) => button.addEventListener('click',() => {el('tasks-status').value=button.dataset.taskStatus;search(false);}));
+  document.querySelectorAll('[data-task-status]').forEach((button) => button.addEventListener('click',() => {el('tasks-status').value=button.dataset.taskStatus;search();}));
   el('tasks-keyword').addEventListener('input',renderRows);
   el('tasks-prev').addEventListener('click',() => {if(applied && applied.page>1) loadList({...applied,page:applied.page-1});});
   el('tasks-next').addEventListener('click',() => {if(applied && pageData?.hasMore) loadList({...applied,page:applied.page+1});});
   el('tasks-page-size').addEventListener('change',() => {if(applied) loadList({...applied,page:1,page_size:Number(el('tasks-page-size').value)});});
-  el('tasks-stats-retry').addEventListener('click',() => {if(applied) loadStatistics({...applied},true);});
+  el('tasks-stats-retry').addEventListener('click',() => {if(applied) loadStatistics({...applied});});
   el('tasks-rows').addEventListener('click',async(event) => {
     const button = event.target.closest('button');
     if (!button) return;

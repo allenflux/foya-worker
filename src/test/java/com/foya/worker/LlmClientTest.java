@@ -113,7 +113,9 @@ class LlmClientTest {
         assertTrue(system.contains("不把样本比例外推"));
         assertTrue(system.contains("只有total=0"), "an empty diagnostic sample must not erase global task counts");
         assertTrue(system.contains("matchesStatusSummary=false"), "changed snapshots must not be combined into a rate or trend");
-        assertTrue(system.contains("是否终态"), "old records are not necessarily pending or blocked");
+        assertTrue(system.contains("终态记录较旧"), "old terminal records must not be called pending or blocked");
+        assertTrue(system.contains("0处理中、1旧状态"), "use the current business interpretation of status zero");
+        assertTrue(system.contains("不能因1数量少就认为没有处理中任务"), "the rarely used legacy status must not replace active processing counts");
         JsonNode evidence = Json.MAPPER.readTree(request.path("messages").path(1).path("content").asText());
         assertEquals(180, evidence.path("diagnostics").path("aging").path("updated").path("oldestMinutes").asInt());
         assertEquals("type-a", evidence.path("diagnostics").path("workflowsTop5").path(0).path("taskType").asText());

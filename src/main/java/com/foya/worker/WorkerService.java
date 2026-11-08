@@ -528,7 +528,7 @@ public final class WorkerService implements AutoCloseable {
         long difference = nonNegativeCount(input.path("total")) - classified;
         metrics.put("snapshotDifference", difference);
         metrics.put("consistent", difference == 0);
-        metrics.put("statusMeaning", Map.of("-1", "失败", "2", "成功", "otherCodes", "状态0/1/3仅按状态码解读，名称未确认"));
+        metrics.put("statusMeaning", Map.of("-1", "失败", "0", "处理中", "1", "旧状态（历史处理中，现已少用）", "2", "成功", "3", "加水印中"));
         metrics.put("snapshotNote", "状态与总数分别查询；snapshotDifference 是查询期间的快照差额，不是其他状态。consistent=false 时不计算占比或成功率，只说明独立计数及差额；非端到端成功率。");
         return metrics;
     }
