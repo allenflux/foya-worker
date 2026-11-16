@@ -14,6 +14,7 @@
   <script src="/tasks.js" defer></script>
 </head>
 <body class="app-shell" data-view="home">
+<div class="home-sky" aria-hidden="true"></div>
 <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 7V3m-2 0h4M1 12v5m22-5v5M8 12h.01M16 12h.01M9 16h6"/></symbol>
@@ -41,6 +42,10 @@
     <span class="workspace-current" id="breadcrumb-current" aria-current="page"></span>
     <div class="header-actions">
       <div class="service-state"><span class="connection-dot" id="connection-dot"></span><span id="connection-text" data-en="Connecting…">正在连接服务</span></div>
+      <button class="home-motion-toggle" id="home-motion-toggle" type="button" aria-pressed="true" aria-label="背景动效" data-en-aria-label="Background motion" title="背景动效" data-en-title="Background motion">
+        <svg class="home-motion-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14m6-14v14"/></svg>
+        <svg class="home-motion-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z"/></svg>
+      </button>
       <div class="app-language" role="group" aria-label="界面语言" data-en-aria-label="Language">
         <button id="app-lang-zh" type="button" lang="zh-CN" aria-pressed="true">中文</button>
         <button id="app-lang-en" type="button" lang="en" aria-pressed="false">English</button>
@@ -48,46 +53,42 @@
     </div>
   </div>
 </header><main class="container-fluid p-3 workspace-main"><section id="error-panel" class="alert alert-danger hidden mb-3" role="alert" aria-labelledby="error-title"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><strong id="error-title" data-en="Latest error">最近一次错误</strong><div class="d-flex gap-2"><button type="button" class="btn btn-outline-danger btn-sm" id="copy-error" data-en="Copy error details">复制错误详情</button><button type="button" class="btn btn-outline-secondary btn-sm" id="clear-error" data-en="Clear">清除</button></div></div><div id="error-message" class="small text-break"></div><details class="mt-2"><summary class="small" data-en="Show redacted details">查看脱敏详情（可复制反馈）</summary><pre id="error-details" class="font-monospace small border rounded bg-white p-2 mt-2 mb-0 overflow-auto"></pre></details></section>
-<section id="view-home" class="view active" aria-labelledby="home-title">
-  <header class="home-hero">
-    <img class="home-hero-image" src="/workspace-hero.webp" width="2172" height="724" alt="" fetchpriority="high">
-    <h1 id="home-title" data-en="AIAPI Workspace">AIAPI 工作台</h1>
-  </header>
-  <section class="home-tools" aria-labelledby="home-tools-title">
-    <h2 id="home-tools-title" data-en="Tools">工具</h2>
-    <div class="home-unit-grid">
-      <a class="home-unit" href="#overview">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-chart"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="Daily stats">日统计</strong><span data-en="Review daily totals, amounts and channel rankings.">查看成功单数、金额与渠道排行。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-      <a class="home-unit" href="#tasks">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-file"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="P0 tasks">P0 任务</strong><span data-en="Browse P0 tasks by time and status.">按时间和状态浏览 P0 任务。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-      <a class="home-unit" href="#task-lookup">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-search"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="Task lookup">单条查询</strong><span data-en="Find a task by Task ID or UUID.">按 Task ID 或 UUID 查找任务。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-      <a class="home-unit" href="#settings">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-sliders"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="Settings">配置</strong><span data-en="Manage data sources, bots and report schedules.">管理数据源、机器人与日报计划。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-      <a class="home-unit" href="#mappings">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-grid"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="Mappings">映射</strong><span data-en="Edit channel names, workflow names and unit prices.">编辑渠道、工作流名称和任务单价。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-      <a class="home-unit" href="#logs">
-        <span class="home-unit-icon"><svg aria-hidden="true"><use href="#i-clock"/></svg></span>
-        <span class="home-unit-copy"><strong data-en="Logs">记录</strong><span data-en="View job progress, errors and cache status.">查看作业进度、错误与缓存状态。</span></span>
-        <svg class="home-unit-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-      </a>
-    </div>
-  </section>
+<section id="view-home" class="view active">
+  <nav aria-labelledby="home-title">
+    <h1 id="home-title" data-en="Tools">工具</h1>
+    <ul class="home-tool-list" role="list">
+      <li><a class="home-tool" href="#overview">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-chart"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="Daily stats">日统计</strong><span data-en="Daily totals, amounts and channel rankings">成功单数、金额与渠道排行</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+      <li><a class="home-tool" href="#tasks">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-file"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="P0 tasks">P0 任务</strong><span data-en="Filter tasks by time and status">按时间和状态筛选任务</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+      <li><a class="home-tool" href="#task-lookup">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-search"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="Task lookup">单条查询</strong><span data-en="Search by Task ID or UUID">按 Task ID 或 UUID 查找</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+      <li><a class="home-tool" href="#settings">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-sliders"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="Settings">配置</strong><span data-en="Data sources, bots and report schedules">数据源、机器人与日报计划</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+      <li><a class="home-tool" href="#mappings">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-grid"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="Mappings">映射</strong><span data-en="Channel names, workflow names and unit prices">渠道、工作流名称和任务单价</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+      <li><a class="home-tool" href="#logs">
+        <span class="home-tool-icon"><svg aria-hidden="true"><use href="#i-clock"/></svg></span>
+        <span class="home-tool-copy"><strong data-en="Logs">记录</strong><span data-en="Job progress, errors and cache status">作业进度、错误与缓存状态</span></span>
+        <svg class="home-tool-arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </a></li>
+    </ul>
+  </nav>
 </section>
 <section id="view-overview" class="view" aria-labelledby="overview-title">
           <div class="page-heading d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3"><div><h1 id="overview-title" class="h5 mb-0" data-en="Daily stats">日统计</h1><p class="page-description" data-en="Daily totals, channels, and workflows.">每日趋势、渠道与工作流表现，一处查看。</p></div><div class="d-flex flex-wrap align-items-center gap-2"><label class="input-group input-group-sm date-control"><span class="input-group-text"><svg><use href="#i-calendar"/></svg><span class="ms-2" data-en="Through">统计截至</span></span><input class="form-control" type="date" id="end-date" aria-label="统计结束日期" data-en-aria-label="Report end date"></label><button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-2" id="pull-button"><svg><use href="#i-refresh"/></svg><span data-en="Refresh stats">刷新统计</span></button></div></div>

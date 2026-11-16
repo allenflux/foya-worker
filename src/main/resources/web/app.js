@@ -1019,6 +1019,11 @@ async function initialize() {
 }
 
 $('#end-date').value=yesterday();
+const homeMotionToggle = $('#home-motion-toggle');
+homeMotionToggle.addEventListener('click', () => {
+  const paused = document.body.classList.toggle('home-motion-paused');
+  homeMotionToggle.setAttribute('aria-pressed', String(!paused));
+});
 setView();initialize();
 setInterval(() => {if(document.visibilityState==='visible') refreshStatus().catch(() => {});},3000);
 document.addEventListener('visibilitychange',() => {if(document.visibilityState==='visible') refreshStatus().catch(() => {});});

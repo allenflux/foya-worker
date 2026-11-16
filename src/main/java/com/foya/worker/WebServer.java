@@ -148,7 +148,7 @@ public final class WebServer implements AutoCloseable {
         if (!method.equals("GET") && !method.equals("HEAD")) { json(exchange, 405, Map.of("error", "请求方式不允许。")); return; }
         String resource = switch (path) {
             case "/", "/index.html" -> "index.html";
-            case "/language.js", "/app.js", "/tasks.js", "/styles.css", "/workspace-hero.webp" -> path.substring(1);
+            case "/language.js", "/app.js", "/tasks.js", "/styles.css" -> path.substring(1);
             default -> null;
         };
         if (resource == null) { json(exchange, 404, Map.of("error", "页面不存在。")); return; }
@@ -158,7 +158,6 @@ public final class WebServer implements AutoCloseable {
             String contentType = switch (resource.substring(resource.lastIndexOf('.') + 1)) {
                 case "js" -> "text/javascript; charset=utf-8";
                 case "css" -> "text/css; charset=utf-8";
-                case "webp" -> "image/webp";
                 default -> "text/html; charset=utf-8";
             };
             exchange.getResponseHeaders().set("Content-Type", contentType);
