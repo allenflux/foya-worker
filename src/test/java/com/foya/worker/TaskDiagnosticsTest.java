@@ -76,6 +76,57 @@ class TaskDiagnosticsTest {
         assertFalse(result.path("coverage").path("complete").asBoolean());
     }
 
+    @Test void failureBreakdownIncludesAllObservedWorkflowAndTypePairs() {
+        AppConfig config = new AppConfig();
+        config.workflowNames.put("mapped", "映射工作流");
+        List<JsonNode> rows = new ArrayList<>(List.of(
+                row("a", -1, 30, 10).put("task_type", "image").put("workflow_name", "工作流 A"),
+                row("b", -1, 30, 10).put("task_type", "image").put("workflow_name", "工作流 A"),
+                row("c", -1, 30, 10).put("task_type", "image").put("workflow_name", "工作流 B"),
+                row("d", -1, 30, 10).put("task_type", "video").put("workflow_name", "工作流 A"),
+                row("e", -1, 30, 10).put("task_type", "mapped"),
+                row("f", -1, 30, 10),
+                row("g", 0, 30, 10).put("task_type", "image").put("workflow_name", "工作流 A")));
+        for (int i = 0; i < 3; i++) rows.add(row("extra-" + i, -1, 30, 10).put("task_type", "type-" + i));
+        JsonNode result = summarize(config, rows, coverage(10, true, 9, 1, 0, 0));
+        JsonNode failures = result.path("failureBreakdown");
+        assertTrue(failures.path("complete").asBoolean());
+        assertEquals(9, failures.path("expectedCount").asInt());
+        assertEquals(9, failures.path("observedCount").asInt());
+        assertEquals(8, failures.path("rows").size());
+        JsonNode first = failures.path("rows").get(0);
+        assertEquals("工作流 A", first.path("workflowName").asText());
+        assertEquals("image", first.path("taskType").asText());
+        assertEquals(2, first.path("count").asInt());
+        assertEquals(22.22, first.path("shareOfObservedPercent").asDouble());
+        Map<List<String>,Integer> counts = new HashMap<>();
+        for (JsonNode group : failures.path("rows")) counts.put(List.of(group.path("taskType").asText(), group.path("workflowName").asText()), group.path("count").asInt());
+        assertEquals(1, counts.get(List.of("image", "工作流 B")));
+        assertEquals(1, counts.get(List.of("video", "工作流 A")));
+        assertEquals(1, counts.get(List.of("mapped", "映射工作流")));
+        assertEquals(1, counts.get(List.of("未提供类型", "未提供名称")));
+    }
+
+    @Test void failedStatusCoverageReportsPartialCountsWithoutExtrapolating() {
+        List<JsonNode> rows = List.of(row("a", -1, 30, 10).put("task_type", "image"));
+        Map<String,Object> coverage = Map.of("complete", false, "truncated", true, "perStatus",
+                Map.of("-1", Map.of("expectedCount", 5000, "complete", false, "truncated", true)));
+        JsonNode failures = summarize(new AppConfig(), rows, coverage).path("failureBreakdown");
+        assertFalse(failures.path("complete").asBoolean());
+        assertTrue(failures.path("truncated").asBoolean());
+        assertFalse(failures.path("requestFailed").asBoolean());
+        assertEquals(5000, failures.path("expectedCount").asInt());
+        assertEquals(1, failures.path("observedCount").asInt());
+        assertEquals(100, failures.path("rows").get(0).path("shareOfObservedPercent").asDouble());
+
+        coverage = Map.of("perStatus", Map.of("-1", Map.of("error", "上游超时")));
+        failures = summarize(new AppConfig(), List.of(), coverage).path("failureBreakdown");
+        assertFalse(failures.path("complete").asBoolean());
+        assertTrue(failures.path("requestFailed").asBoolean());
+        assertTrue(failures.path("expectedCount").isNull());
+        assertTrue(failures.path("rows").isEmpty());
+    }
+
     @Test void invalidMissingFutureAndReversedTimestampsNeverBecomeZeroMinuteObservations() {
         List<JsonNode> rows = List.of(
                 Json.MAPPER.createObjectNode().put("uuid", "a").put("status", 0).put("created_at", "invalid-date"),

@@ -29,6 +29,9 @@ public final class TaskQueryService {
 
     record Window(ZonedDateTime start, ZonedDateTime end, Map<String, String> filters) {}
     record Page(List<JsonNode> rows, Long total, Boolean hasMore, int pageSize) {}
+    static final class TaskNotFoundException extends IOException {
+        TaskNotFoundException() { super("未找到匹配的 P0 任务。"); }
+    }
     private static final int DIAGNOSTIC_RECORDS_PER_STATUS = 500;
     private static final List<Integer> DIAGNOSTIC_STATUSES = List.of(-1, 0, 1, 3);
     private static final class DiagnosticSample {
@@ -65,17 +68,7 @@ public final class TaskQueryService {
                 || Boolean.TRUE.equals(result.hasMore()) && endOffset >= result.total()))
             throw new IOException("p0 返回的分页总数与后续页标识冲突。");
         List<String> secrets = secrets(config, apiKey);
-        List<ObjectNode> rows = new ArrayList<>();
-        for (JsonNode raw : result.rows()) {
-            ObjectNode row = (ObjectNode) sanitize(raw, secrets);
-            String hash = text(row, "hash_key", "hashKey");
-            String type = text(row, "task_type", "taskType", "type");
-            row.put("channelName", hash.isBlank() ? "未分類" : config.channelNames.getOrDefault(hash, hash));
-            String workflowName = text(row, "workflow_name", "workflowName");
-            if (workflowName.isBlank()) workflowName = Objects.toString(config.workflowNames.get(type), "");
-            row.put("workflowName", workflowName);
-            rows.add(row);
-        }
+        List<ObjectNode> rows = result.rows().stream().map(row -> taskView(config, row, secrets)).toList();
         Map<String, Object> response = base(config, window);
         response.put("items", rows);
         response.put("page", page);
@@ -84,6 +77,62 @@ public final class TaskQueryService {
         response.put("hasMore", result.hasMore() != null ? result.hasMore()
                 : result.total() != null ? (long) (page - 1) * result.pageSize() + rows.size() < result.total() : !rows.isEmpty());
         return response;
+    }
+
+    public Map<String, Object> lookup(AppConfig config, JsonNode input) throws Exception {
+        long deadline = System.nanoTime() + budget.toNanos();
+        if (!input.isObject() || input.has("uuid") == input.has("task_id"))
+            throw new IllegalArgumentException("请提供一个 UUID 或 Task ID。");
+        boolean byUuid = input.has("uuid");
+        String field = byUuid ? "uuid" : "task_id";
+        String id = input.path(field).textValue();
+        if (id == null || id.isBlank() || id.length() > 256 || id.matches("(?s).*[\\p{Cc}].*"))
+            throw new IllegalArgumentException("请输入有效的 UUID 或 Task ID，最多 256 字符且不能含控制字符。");
+        if (byUuid) id = id.strip();
+
+        String key = "";
+        if (input.has("apiKey")) {
+            key = input.path("apiKey").textValue();
+            if (key == null || key.length() > 512 || key.chars().anyMatch(c -> c < 32 || c > 126))
+                throw new IllegalArgumentException("P0 API Key 格式无效。");
+            key = key.strip();
+        }
+        if (key.isEmpty()) key = P0Client.resolveApiKey(config);
+        if (key.isBlank()) throw new IllegalArgumentException("请输入 P0 API Key。");
+
+        URI source = URI.create(config.p0Endpoint);
+        URI origin = "p0-function.inaiai.com".equalsIgnoreCase(source.getHost())
+                ? URI.create("https://p0-api.inaiai.com") : source;
+        String path = byUuid ? "/api/public/task/uuid" : "/api/public/task";
+        HttpResponse<String> response = get(origin.resolve(path + "?" + field + "=" + encode(id)), key, deadline, false);
+        int status = response.statusCode();
+        if (status == 404) throw new TaskNotFoundException();
+        if (status == 401 || status == 403)
+            throw new IOException("P0 精确查询失败：HTTP " + status + "，请检查 API Key 是否有权查询该任务。");
+        if (status < 200 || status >= 300) throw new IOException("P0 精确查询失败：HTTP " + status + "，请稍后重试。");
+
+        String[] identityFields = byUuid ? new String[]{"uuid"} : new String[]{"task_id", "taskId"};
+        JsonNode task = readResponse(response);
+        if (task != null && task.isObject() && text(task, identityFields).isBlank()) {
+            if (task.has("data")) task = task.path("data");
+            if (task.isObject() && text(task, identityFields).isBlank() && task.has("task")) task = task.path("task");
+        }
+        if (task == null || !task.isObject()) throw new IOException("P0 精确查询返回的任务格式无效。");
+        String found = text(task, identityFields);
+        if (!(byUuid ? id.equalsIgnoreCase(found) : id.equals(found)))
+            throw new IOException("P0 返回的任务与查询标识不一致。");
+        return Map.of("task", taskView(config, task, secrets(config, key)));
+    }
+
+    private static ObjectNode taskView(AppConfig config, JsonNode raw, List<String> secrets) {
+        ObjectNode row = (ObjectNode) sanitize(raw, secrets);
+        String hash = text(row, "hash_key", "hashKey");
+        String type = text(row, "task_type", "taskType", "type");
+        row.put("channelName", hash.isBlank() ? "未分類" : redact(config.channelNames.getOrDefault(hash, hash), secrets));
+        String workflowName = text(row, "workflow_name", "workflowName");
+        if (workflowName.isBlank()) workflowName = redact(Objects.toString(config.workflowNames.get(type), ""), secrets);
+        row.put("workflowName", workflowName);
+        return row;
     }
 
     public Map<String, Object> statistics(AppConfig config, Map<String, String> params) throws Exception {
@@ -137,15 +186,19 @@ public final class TaskQueryService {
         long deadline = System.nanoTime() + budget.toNanos();
         Window window = window(config, params);
         String apiKey = P0Client.resolveApiKey(config);
+        boolean failuresOnly = "-1".equals(params.get("status"));
+        List<Integer> requestedStatuses = failuresOnly ? List.of(-1) : DIAGNOSTIC_STATUSES;
+        int maxRecordsPerStatus = failuresOnly ? TaskDiagnostics.MAX_RECORDS : DIAGNOSTIC_RECORDS_PER_STATUS;
+        int requestedPageSize = failuresOnly ? 1000 : 200;
         Map<Integer,DiagnosticSample> samples = new LinkedHashMap<>();
         Map<Integer,Future<?>> pending = new LinkedHashMap<>();
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
             try {
-                for (int status : DIAGNOSTIC_STATUSES) {
+                for (int status : requestedStatuses) {
                     DiagnosticSample sample = new DiagnosticSample();
                     samples.put(status, sample);
                     pending.put(status, pool.submit(() -> {
-                        try { sampleStatus(config, apiKey, window, status, deadline, sample); }
+                        try { sampleStatus(config, apiKey, window, status, deadline, sample, maxRecordsPerStatus, requestedPageSize); }
                         catch (InterruptedException e) { Thread.currentThread().interrupt(); sample.failed(); }
                         catch (Exception e) { sample.failed(); }
                     }));
@@ -177,7 +230,8 @@ public final class TaskQueryService {
         Map<String,Object> coverage = new LinkedHashMap<>();
         coverage.put("complete", complete); coverage.put("truncated", truncated);
         coverage.put("fetchedCount", rows.size()); coverage.put("expectedCount", totalKnown ? expectedCount : null);
-        coverage.put("maxRecords", DIAGNOSTIC_RECORDS_PER_STATUS * DIAGNOSTIC_STATUSES.size());
+        coverage.put("maxRecords", maxRecordsPerStatus * requestedStatuses.size());
+        coverage.put("failuresOnly", failuresOnly);
         coverage.put("perStatus", perStatus);
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
         Instant queriedAt = Instant.now();
@@ -188,9 +242,8 @@ public final class TaskQueryService {
     }
 
     private void sampleStatus(AppConfig config, String apiKey, Window window, int status, long deadline,
-                              DiagnosticSample sample) throws Exception {
+                              DiagnosticSample sample, int maxRecords, int pageSize) throws Exception {
         Set<String> signatures = new HashSet<>(), recordIds = new HashSet<>();
-        int pageSize = 200;
         for (int page = 1; page <= 100; page++) {
             Page result = request(config, apiKey, window, status, page, pageSize, deadline);
             if (page == 1) pageSize = result.pageSize();
@@ -207,7 +260,7 @@ public final class TaskQueryService {
                 for (JsonNode row : result.rows()) {
                     String id = text(row, "uuid", "id");
                     if (!id.isBlank() && !recordIds.add(id)) throw new IOException("诊断记录重复。");
-                    if (sample.rows.size() == DIAGNOSTIC_RECORDS_PER_STATUS) {
+                    if (sample.rows.size() == maxRecords) {
                         sample.truncated = true;
                         return;
                     }
@@ -228,7 +281,7 @@ public final class TaskQueryService {
                     sample.complete = true;
                     return;
                 }
-                if (sample.rows.size() == DIAGNOSTIC_RECORDS_PER_STATUS) {
+                if (sample.rows.size() == maxRecords) {
                     sample.truncated = true;
                     return;
                 }
@@ -274,11 +327,43 @@ public final class TaskQueryService {
                 + "&page=" + page + "&page_size=" + size + (status == null ? "" : "&status=" + status);
         for (var filter : window.filters().entrySet()) query += "&" + filter.getKey() + "=" + encode(filter.getValue());
         URI uri = URI.create(config.p0Endpoint + "?" + query);
+        HttpResponse<String> response = get(uri, key, deadline, true);
+        int code = response.statusCode();
+        if (code < 200 || code >= 300) throw new IOException("P0 查询失败：HTTP " + code + "，请检查数据源配置或稍后重试。");
+        JsonNode root = readResponse(response);
+        Page decoded = decode(root, size);
+        JsonNode data = root.hasNonNull("data") ? root.path("data") : root;
+        if (page == 1 && !data.hasNonNull("page_size") && !root.hasNonNull("page_size")
+                && !decoded.rows().isEmpty() && decoded.rows().size() < size
+                && decoded.total() != null && decoded.total() > decoded.rows().size()) {
+            // Some compatible APIs cap page_size without echoing the effective limit.
+            // Use the observed size for both offsets and navigation.
+            decoded = new Page(decoded.rows(), decoded.total(), decoded.hasMore(), decoded.rows().size());
+        }
+        if (page == 1 && decoded.total() != null && decoded.total() > 0 && decoded.rows().isEmpty())
+            throw new IOException("p0 首页面为空但总数非零，无法核实统计范围。");
+        for (JsonNode row : decoded.rows()) {
+            if (status != null && row.hasNonNull("status") && !status.toString().equals(row.path("status").asText()))
+                throw new IOException("p0 返回任务的状态与筛选条件不一致，已停止查询。");
+            for (var filter : window.filters().entrySet())
+                if (row.hasNonNull(filter.getKey()) && !filter.getValue().equals(row.path(filter.getKey()).asText()))
+                    throw new IOException("p0 返回任务与筛选条件不一致，已停止查询。");
+            String created = text(row, "created_at", "create_time", "created_time", "createdAt", "createTime", "createdTime");
+            if (!created.isBlank()) {
+                Instant time = P0Client.parseTime(created, window.start().getZone());
+                if (time.isBefore(window.start().toInstant()) || time.isAfter(window.end().toInstant()))
+                    throw new IOException("p0 返回任务超出查询时间范围，请检查数据源时间格式。");
+            }
+        }
+        return decoded;
+    }
+
+    private HttpResponse<String> get(URI uri, String key, long deadline, boolean taskList) throws Exception {
         for (int attempt = 0; attempt < 2; attempt++) {
-            Duration remaining = remaining(deadline);
-            Duration timeout = remaining.compareTo(Duration.ofSeconds(10)) < 0 ? remaining : Duration.ofSeconds(10);
-            HttpRequest.Builder builder = HttpRequest.newBuilder(uri).GET().timeout(timeout)
-                    .header("canary", "true").header("Accept", "application/json");
+            Duration timeout = remaining(deadline);
+            if (timeout.compareTo(Duration.ofSeconds(10)) > 0) timeout = Duration.ofSeconds(10);
+            HttpRequest.Builder builder = HttpRequest.newBuilder(uri).GET().timeout(timeout).header("Accept", "application/json");
+            if (taskList) builder.header("canary", "true");
             if (!key.isBlank()) builder.header("apikey", key);
             CompletableFuture<HttpResponse<String>> future = http.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             HttpResponse<String> response;
@@ -286,47 +371,21 @@ public final class TaskQueryService {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw e; }
             catch (TimeoutException | ExecutionException e) {
                 if (attempt == 0) continue;
-                throw new IOException("P0 查询超时或网络异常（总时限 " + budget.toSeconds() + " 秒），请缩短时间段后重试。");
+                throw new IOException("P0 查询超时或网络异常（总时限 " + budget.toSeconds() + " 秒），"
+                        + (taskList ? "请缩短时间段后重试。" : "请稍后重试。"));
             } finally { if (!future.isDone()) future.cancel(true); }
             int code = response.statusCode();
-            if ((code == 408 || code == 429 || code >= 500) && attempt == 0) {
-                long delay = P0Client.retryDelayMillis(0, response.headers().firstValue("Retry-After").orElse(null), Instant.now());
-                if (delay >= remaining(deadline).toMillis()) throw new IOException("P0 请求限流或暂时不可用，请稍后重试。");
-                Thread.sleep(delay);
-                continue;
-            }
-            if (code < 200 || code >= 300) throw new IOException("P0 查询失败：HTTP " + code + "，请检查数据源配置或稍后重试。");
-            JsonNode root;
-            try { root = Json.MAPPER.readTree(response.body()); }
-            catch (com.fasterxml.jackson.core.JacksonException e) { throw new IOException("p0 返回无效 JSON。"); }
-            Page decoded = decode(root, size);
-            JsonNode data = root.hasNonNull("data") ? root.path("data") : root;
-            if (page == 1 && !data.hasNonNull("page_size") && !root.hasNonNull("page_size")
-                    && !decoded.rows().isEmpty() && decoded.rows().size() < size
-                    && decoded.total() != null && decoded.total() > decoded.rows().size()) {
-                // Some compatible APIs cap page_size without echoing the effective limit.
-                // Return the observed first-page size so subsequent requests use that size
-                // for both offsets and navigation rather than stopping after too few pages.
-                decoded = new Page(decoded.rows(), decoded.total(), decoded.hasMore(), decoded.rows().size());
-            }
-            if (page == 1 && decoded.total() != null && decoded.total() > 0 && decoded.rows().isEmpty())
-                throw new IOException("p0 首页面为空但总数非零，无法核实统计范围。");
-            for (JsonNode row : decoded.rows()) {
-                if (status != null && row.hasNonNull("status") && !status.toString().equals(row.path("status").asText()))
-                    throw new IOException("p0 返回任务的状态与筛选条件不一致，已停止查询。");
-                for (var filter : window.filters().entrySet())
-                    if (row.hasNonNull(filter.getKey()) && !filter.getValue().equals(row.path(filter.getKey()).asText()))
-                        throw new IOException("p0 返回任务与筛选条件不一致，已停止查询。");
-                String created = text(row, "created_at", "create_time", "created_time", "createdAt", "createTime", "createdTime");
-                if (!created.isBlank()) {
-                    Instant time = P0Client.parseTime(created, window.start().getZone());
-                    if (time.isBefore(window.start().toInstant()) || time.isAfter(window.end().toInstant()))
-                        throw new IOException("p0 返回任务超出查询时间范围，请检查数据源时间格式。");
-                }
-            }
-            return decoded;
+            if (attempt != 0 || (code != 408 && code != 429 && code < 500)) return response;
+            long delay = P0Client.retryDelayMillis(0, response.headers().firstValue("Retry-After").orElse(null), Instant.now());
+            if (delay >= remaining(deadline).toMillis()) throw new IOException("P0 请求限流或暂时不可用，请稍后重试。");
+            Thread.sleep(delay);
         }
         throw new IOException("P0 查询失败，请稍后重试。");
+    }
+
+    private static JsonNode readResponse(HttpResponse<String> response) throws IOException {
+        try { return Json.MAPPER.readTree(response.body()); }
+        catch (com.fasterxml.jackson.core.JacksonException e) { throw new IOException("p0 返回无效 JSON。"); }
     }
 
     static Page decode(JsonNode root, int requestedSize) throws IOException {

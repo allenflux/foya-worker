@@ -3,7 +3,7 @@
 const $ = (selector) => document.querySelector(selector);
 const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
-const viewNames = {overview:'统计概览',tasks:'P0 任务',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
+const viewNames = {overview:'统计概览',tasks:'P0 任务','task-lookup':'P0 单条任务查询',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
 let reportAiController = null;
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

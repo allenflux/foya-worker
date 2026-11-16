@@ -307,6 +307,28 @@ class TaskQueryServiceTest {
         assertFalse(coverage.path("perStatus").path("0").path("complete").asBoolean());
     }
 
+    @Test void failureOnlyDiagnosticsScanLargerPagesAndReportStatusSpecificCap() throws Exception {
+        List<String> requests = new CopyOnWriteArrayList<>();
+        serve(query -> {
+            requests.add(query.get("status") + ":" + query.get("page_size"));
+            return diagnosticPage(query, 2400, 800, false);
+        });
+        Map<String,String> params = params();
+        params.put("status", "-1");
+        JsonNode diagnostics = Json.MAPPER.valueToTree(new TaskQueryService().diagnostics(config, params)).path("diagnostics");
+        assertEquals(List.of("-1:1000", "-1:800", "-1:800"), requests);
+        assertEquals("failed_tasks", diagnostics.path("scope").asText());
+        assertEquals(1, diagnostics.path("coverage").path("perStatus").size());
+        assertEquals(2000, diagnostics.path("coverage").path("maxRecords").asInt());
+        JsonNode failures = diagnostics.path("failureBreakdown");
+        assertEquals(2400, failures.path("expectedCount").asInt());
+        assertEquals(2000, failures.path("observedCount").asInt());
+        assertFalse(failures.path("complete").asBoolean());
+        assertTrue(failures.path("truncated").asBoolean());
+        assertEquals(2000, failures.path("rows").get(0).path("count").asInt());
+        assertFalse(diagnostics.toString().contains("RAW_PROMPT_MUST_NOT_RETURN"));
+    }
+
     @Test void diagnosticDeadlinePreservesOtherStatusesAndLabelsMissingCoverage() throws Exception {
         serve(query -> {
             if ("3".equals(query.get("status"))) {

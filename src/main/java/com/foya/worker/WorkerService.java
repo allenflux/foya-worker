@@ -440,6 +440,7 @@ public final class WorkerService implements AutoCloseable {
                 diagnostics = Json.MAPPER.convertValue(node, new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
             }
             diagnostics = new LinkedHashMap<>(diagnostics);
+            diagnostics.remove("failureBreakdown");
             diagnostics.put("available", true);
             diagnostics.put("nonSuccessAtStatusQuery", nonSuccess);
             var coverage = Json.MAPPER.valueToTree(diagnostics).path("coverage");

@@ -13,13 +13,15 @@ window.P0Tasks = (() => {
   let quickRange = null;
   let listController = null;
   let statsController = null;
+  let failureController = null;
+  let failureBreakdown = null;
   let aiController = null;
   let listSequence = 0;
   let statsSequence = 0;
   let aiSequence = 0;
   let listBusy = false;
   let statsBusy = false;
-  let detail = null;
+  let lookupController = null;
 
   const first = (row, names) => {
     for (const name of names) {
@@ -150,6 +152,8 @@ window.P0Tasks = (() => {
     el('tasks-next').disabled = listBusy || !pageData?.hasMore;
     el('tasks-page-size').disabled = listBusy;
     el('tasks-export').disabled = listBusy || !pageData?.items?.length;
+    el('tasks-failure-load').disabled = !applied || !!failureController;
+    el('tasks-failure-load').textContent = failureController ? '正在分类' : failureBreakdown ? '刷新失败分类' : '查看失败分类';
     el('tasks-ai-generate').disabled = !statistics || statistics.complete === false || statsBusy || !!aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured;
     el('tasks-ai-generate').textContent = aiController ? '正在生成' : '重新生成';
   }
@@ -240,8 +244,72 @@ window.P0Tasks = (() => {
       if (quickRange) setRange(quickRange);
       const query = inputQuery();
       el('tasks-keyword').value = '';
+      resetFailureBreakdown();
       await Promise.allSettled([loadList(query),loadStatistics(query)]);
     } catch (error) {errorText(error,'P0 查询条件');}
+  }
+
+  function resetFailureBreakdown() {
+    failureController?.abort();
+    failureController = null;
+    failureBreakdown = null;
+    el('tasks-failure-summary').textContent = '按当前查询条件查看失败任务（状态 -1）的分布。';
+    renderFailureBreakdown();
+  }
+
+  function renderFailureBreakdown() {
+    const rows = failureBreakdown?.rows || [];
+    el('tasks-failure-table').classList.toggle('hidden',!rows.length);
+    el('tasks-failure-group').classList.toggle('hidden',!rows.length);
+    if (!rows.length) return;
+    const by = el('tasks-failure-group').value;
+    const axes = by === 'both' ? ['workflowName','taskType'] : [by];
+    const labels = {workflowName:'Workflow name',taskType:'Task type'};
+    const groups = new Map();
+    for (const row of rows) {
+      const values = axes.map((axis) => row[axis]);
+      const key = JSON.stringify(values);
+      const group = groups.get(key) || {values,count:0};
+      group.count += row.count;
+      groups.set(key,group);
+    }
+    const ranked = [...groups.values()].sort((a,b) => b.count - a.count || a.values.join(' ').localeCompare(b.values.join(' ')));
+    const observed = failureBreakdown.observedCount;
+    el('tasks-failure-head').innerHTML = axes.map((axis) => `<th scope="col">${labels[axis]}</th>`).join('')
+      + '<th scope="col" class="text-end text-nowrap">失败单数</th><th scope="col" class="text-end text-nowrap">占比</th>';
+    el('tasks-failure-rows').innerHTML = ranked.map(({values,count}) => `<tr>${values.map((value) => `<td class="text-break">${esc(value)}</td>`).join('')}<td class="text-end text-nowrap">${fmt(count)}</td><td class="text-end text-nowrap">${(count / observed * 100).toFixed(1)}%</td></tr>`).join('');
+  }
+
+  async function loadFailureBreakdown() {
+    if (!applied || failureController) return;
+    const params = queryParams(applied,true);
+    params.set('status','-1');
+    const controller = failureController = new AbortController();
+    failureBreakdown = null;
+    renderFailureBreakdown();
+    el('tasks-failure-summary').textContent = '正在读取失败任务明细…';
+    updateActions();
+    try {
+      const response = await get(`/api/tasks/diagnostics?${params}`,controller.signal);
+      if (failureController !== controller) return;
+      const result = response.diagnostics?.failureBreakdown;
+      if (!Array.isArray(result?.rows)) throw new Error('P0 未返回失败任务分类，请稍后重试。');
+      failureBreakdown = result;
+      const count = fmt(result.observedCount);
+      if (result.complete) {
+        el('tasks-failure-summary').textContent = result.observedCount ? `已分类 ${count} 条失败任务，按失败单数降序排列。` : '当前查询范围内没有符合条件的失败任务。';
+      } else {
+        const reported = result.expectedCount == null ? '' : `（上游总数 ${fmt(result.expectedCount)} 条）`;
+        const reason = result.requestFailed ? '明细读取中断' : result.truncated ? '已达到读取上限' : '明细尚未读全';
+        el('tasks-failure-summary').textContent = `${reason}，已读取 ${count} 条失败任务${reported}。占比按已读取记录计算，可缩短时间范围后重试。`;
+      }
+      renderFailureBreakdown();
+    } catch (error) {
+      if (failureController !== controller || error.name === 'AbortError') return;
+      el('tasks-failure-summary').textContent = errorText(error,'P0 失败任务分类');
+    } finally {
+      if (failureController === controller) {failureController = null;updateActions();}
+    }
   }
 
   function contentSummary(row) {
@@ -304,20 +372,84 @@ window.P0Tasks = (() => {
     return esc(text || '—');
   }
 
-  function showDetail(index) {
-    const row = pageData?.items?.[index];
-    if (!row) return;
-    detail = row;
+  function renderDetail(row, prefix) {
+    const status = first(row,['status','task_status','taskStatus']);
     const fields = [
       ['任务 ID',taskId(row)],['记录 UUID',row.uuid],['Workflow name',workflowName(row)],['Task type',taskType(row)],
-      ['状态',statusLabel(first(row,['status','task_status','taskStatus']))],['渠道',row.channelName || '未分類'],['HashKey',channel(row)],
+      ['状态',statusLabel(status === '' ? '未知' : status)],['错误码',first(row,['error_code','errorCode'])],
+      ['场景',first(row,['scene_name','sceneName'])],['渠道',row.channelName || '未分類'],['HashKey',channel(row)],
       ['用户标识',first(row,['user_id','userId','user_identifier'])],['创建时间',displayTime(first(row,['created_at','createdAt','create_time']))],
       ['更新时间',displayTime(first(row,['updated_at','updatedAt','update_time']))],['ComfyUI 地址',first(row,['comfyui_url','comfyui_address','comfyuiUrl','comfyuiAddress','comfyui'])],
       ['上游 fee',row.fee]
     ];
-    el('tasks-detail-meta').innerHTML = fields.filter(([,value]) => value !== '' && value != null).map(([label,value]) => `<dt class="col-sm-2">${esc(label)}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
-    el('tasks-detail-json').textContent = JSON.stringify(row,null,2);
+    el(`${prefix}-meta`).innerHTML = fields.filter(([,value]) => value !== '' && value != null).map(([label,value]) => `<dt class="col-sm-2">${esc(label)}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
+    el(`${prefix}-json`).textContent = JSON.stringify(row,null,2);
+  }
+
+  function showDetail(index) {
+    const row = pageData?.items?.[index];
+    if (!row) return;
+    renderDetail(row,'tasks-detail');
     bootstrap.Modal.getOrCreateInstance(el('tasks-detail-dialog')).show();
+  }
+
+  function lookupMessage(message) {
+    el('task-lookup-message').textContent = message;
+    el('task-lookup-message').classList.toggle('hidden',!message);
+  }
+
+  function clearLookup() {
+    el('task-lookup-value').setCustomValidity('');
+    el('task-lookup-result').classList.add('hidden');
+    el('task-lookup-meta').textContent = '';
+    el('task-lookup-json').textContent = '';
+    lookupMessage('');
+  }
+
+  async function lookupTask(event) {
+    event.preventDefault();
+    if (lookupController) return;
+    const kind = el('task-lookup-kind');
+    const input = el('task-lookup-value');
+    const value = kind.value === 'uuid' ? input.value.trim() : input.value;
+    if (!value.trim()) {
+      input.setCustomValidity(`请输入${el('task-lookup-label').textContent}。`);
+      input.reportValidity();
+      return;
+    }
+    const controller = lookupController = new AbortController();
+    const button = el('task-lookup-submit');
+    const key = el('task-lookup-key');
+    const notFound = '未找到匹配的任务，请核对输入的标识。';
+    const payload = {[kind.value]:value};
+    if (key.value.trim()) payload.apiKey = key.value.trim();
+    clearLookup();
+    kind.disabled = input.disabled = key.disabled = button.disabled = true;
+    lookupMessage('正在查询 P0…');
+    try {
+      const {task} = await api('/api/tasks/lookup',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
+      if (controller.signal.aborted) return;
+      if (task === null) {
+        lookupMessage(notFound);
+        return;
+      }
+      if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('P0 未返回有效的任务详情，请稍后重试。');
+      renderDetail(task,'task-lookup');
+      el('task-lookup-result').classList.remove('hidden');
+      lookupMessage('找到 1 条任务。');
+    } catch (error) {
+      if (!controller.signal.aborted) lookupMessage(error.status === 404 ? notFound : errorText(error,'P0 单条任务查询'));
+    } finally {
+      lookupController = null;
+      kind.disabled = input.disabled = key.disabled = button.disabled = false;
+    }
+  }
+
+  async function copyDetail(prefix) {
+    const data = el(`${prefix}-json`).textContent;
+    if (!data) return;
+    try {await copyText(data);toast('任务数据已复制。');}
+    catch(error) {errorText(error,'复制任务详情');}
   }
 
   function exportPage() {
@@ -371,8 +503,10 @@ window.P0Tasks = (() => {
     config = next;
     el('tasks-zone').textContent = config.timezone || 'Asia/Shanghai';
     if (firstConfig || changed) {
+      if (!firstConfig) {lookupController?.abort();clearLookup();}
       listController?.abort();statsController?.abort();listSequence++;statsSequence++;stopAi();
       applied=null;pageData=null;statistics=null;listBusy=false;statsBusy=false;
+      resetFailureBreakdown();
       if (firstConfig || previousConfig?.timezone !== config.timezone) setRange('today');
       renderStats();
       el('tasks-rows').innerHTML='';el('tasks-result-count').textContent='待查询';el('tasks-page-info').textContent='—';
@@ -411,6 +545,8 @@ window.P0Tasks = (() => {
   el('tasks-next').addEventListener('click',() => {if(applied && pageData?.hasMore) loadList({...applied,page:applied.page+1});});
   el('tasks-page-size').addEventListener('change',() => {if(applied) loadList({...applied,page:1,page_size:Number(el('tasks-page-size').value)});});
   el('tasks-stats-retry').addEventListener('click',() => {if(applied) loadStatistics({...applied});});
+  el('tasks-failure-load').addEventListener('click',loadFailureBreakdown);
+  el('tasks-failure-group').addEventListener('change',renderFailureBreakdown);
   el('tasks-rows').addEventListener('click',async(event) => {
     const button = event.target.closest('button');
     if (!button) return;
@@ -427,11 +563,15 @@ window.P0Tasks = (() => {
       catch(error) {errorText(error,`复制 ${label}`);}
     }
   });
-  el('tasks-copy-detail').addEventListener('click',async() => {
-    if (!detail) return;
-    try {await copyText(JSON.stringify(detail,null,2));toast('任务数据已复制。');}
-    catch(error) {errorText(error,'复制任务详情');}
+  el('tasks-copy-detail').addEventListener('click',() => copyDetail('tasks-detail'));
+  el('task-lookup-form').addEventListener('submit',lookupTask);
+  el('task-lookup-kind').addEventListener('change',(event) => {
+    el('task-lookup-label').textContent = event.target.value === 'uuid' ? 'UUID' : 'Task ID';
+    clearLookup();
   });
+  el('task-lookup-value').addEventListener('input',clearLookup);
+  el('task-lookup-key').addEventListener('input',clearLookup);
+  el('task-lookup-copy').addEventListener('click',() => copyDetail('task-lookup'));
   el('tasks-export').addEventListener('click',exportPage);
   el('tasks-ai-generate').addEventListener('click',generateAi);
   el('tasks-ai-cancel').addEventListener('click',() => stopAi(true));

@@ -10,8 +10,9 @@ import java.util.*;
 
 /** Aggregate-only observations of non-success task snapshots, never task payloads. */
 public final class TaskDiagnostics {
+    private static final String FAILED_STATUS = "-1";
     private static final List<String> STATUSES = List.of("-1", "0", "1", "3");
-    private static final int MAX_RECORDS = 2000;
+    static final int MAX_RECORDS = 2000;
     private TaskDiagnostics() {}
 
     public static Map<String,Object> summarize(AppConfig config, List<JsonNode> rows, Instant queriedAt,
@@ -19,12 +20,16 @@ public final class TaskDiagnostics {
         Objects.requireNonNull(config);
         Objects.requireNonNull(queriedAt);
         List<JsonNode> input = rows == null ? List.of() : rows;
+        JsonNode original = Json.MAPPER.valueToTree(sourceCoverage == null ? Map.of() : sourceCoverage);
+        boolean failuresOnly = original.path("failuresOnly").asBoolean(false);
+        List<String> requestedStatuses = failuresOnly ? List.of(FAILED_STATUS) : STATUSES;
         ZoneId zone = ZoneId.of(config.timezone);
         List<String> secrets = secrets(config);
         Set<String> identities = new HashSet<>();
         Map<String,Group> statuses = new LinkedHashMap<>();
-        STATUSES.forEach(status -> statuses.put(status, new Group()));
+        requestedStatuses.forEach(status -> statuses.put(status, new Group()));
         Map<Workflow,Group> workflows = new LinkedHashMap<>();
+        Map<Workflow,Long> failedWorkflows = new HashMap<>();
         Map<String,Group> channels = new LinkedHashMap<>();
         Map<String,Long> codes = new HashMap<>();
         Ages createdAges = new Ages(), updatedAges = new Ages();
@@ -34,7 +39,7 @@ public final class TaskDiagnostics {
             if (row == null || !row.isObject()) { invalidStatusCount++; continue; }
             String status = text(row, "status", "task_status", "taskStatus");
             if (status.equals("2")) { excludedSuccessCount++; continue; }
-            if (!STATUSES.contains(status)) { invalidStatusCount++; continue; }
+            if (!statuses.containsKey(status)) { invalidStatusCount++; continue; }
             // A business task_id may repeat. Only a record UUID/id establishes identity.
             String identity = text(row, "uuid", "id");
             if (!identity.isEmpty() && !identities.add(identity)) { duplicateCount++; continue; }
@@ -45,11 +50,13 @@ public final class TaskDiagnostics {
             boolean beforeCreation = created != null && updated != null && updated.isBefore(created);
             Double updatedMinutes = updatedAges.add(updated, queriedAt, beforeCreation);
             statuses.get(status).add(createdMinutes, updatedMinutes);
-            String taskType = label(text(row, "task_type", "taskType", "type"), secrets, "未提供类型");
+            String rawTaskType = text(row, "task_type", "taskType", "type");
+            String taskType = label(rawTaskType, secrets, "未提供类型");
             String workflowName = text(row, "workflow_name", "workflowName");
-            if (workflowName.isBlank()) workflowName = Objects.toString(config.workflowNames.get(text(row, "task_type", "taskType", "type")), "");
+            if (workflowName.isBlank()) workflowName = Objects.toString(config.workflowNames.get(rawTaskType), "");
             Workflow workflow = new Workflow(label(workflowName, secrets, "未提供名称"), taskType);
             workflows.computeIfAbsent(workflow, ignored -> new Group()).add(createdMinutes, updatedMinutes);
+            if (FAILED_STATUS.equals(status)) failedWorkflows.merge(workflow, 1L, Long::sum);
             String hash = text(row, "hash_key", "hashKey");
             String mapped = Objects.toString(config.channelNames.get(hash), "");
             String channel = hash.isBlank() ? "未分類" : mapped.isBlank() || mapped.equals(hash)
@@ -59,14 +66,13 @@ public final class TaskDiagnostics {
             if (!code.isBlank()) { codes.merge(code, 1L, Long::sum); structuredErrorCount++; }
             else if (hasError(row)) errorWithoutCodeCount++;
         }
-        JsonNode original = Json.MAPPER.valueToTree(sourceCoverage == null ? Map.of() : sourceCoverage);
         Map<String,Object> coverage = coverage(original, observed, statuses, duplicateCount, invalidStatusCount,
                 excludedSuccessCount, input.size() > MAX_RECORDS);
         coverage.put("fetchedCount", observed);
         coverage.put("receivedCount", input.size());
         Map<String,Object> result = new LinkedHashMap<>();
         result.put("asOf", queriedAt.toString());
-        result.put("scope", "non_success_tasks");
+        result.put("scope", failuresOnly ? "failed_tasks" : "non_success_tasks");
         result.put("coverage", coverage);
         result.put("aging", Map.of("created", createdAges.json(), "updated", updatedAges.json()));
         List<Map<String,Object>> statusRows = new ArrayList<>();
@@ -77,6 +83,10 @@ public final class TaskDiagnostics {
         result.put("statusBreakdown", statusRows);
         result.put("workflowsTop5", workflowRows(workflows, observed, false));
         result.put("workflowsByAgingTop5", workflowRows(workflows, observed, true));
+        long observedFailures = statuses.get(FAILED_STATUS).count;
+        Map<String,Object> failureBreakdown = statusCoverage(original.path("perStatus").path(FAILED_STATUS), observedFailures);
+        failureBreakdown.put("rows", failureRows(failedWorkflows, observedFailures));
+        result.put("failureBreakdown", failureBreakdown);
         List<Map<String,Object>> channelRows = new ArrayList<>();
         channels.entrySet().stream().sorted(groupOrder(false)).limit(5).forEach(entry -> {
             Map<String,Object> item = entry.getValue().json((long) coverage.get("observedCount"));
@@ -101,18 +111,10 @@ public final class TaskDiagnostics {
         boolean complete = original.path("complete").asBoolean(false) && expected != null && observed == expected
                 && duplicates == 0 && invalid == 0 && excluded == 0 && !capped && !original.path("truncated").asBoolean(false);
         Map<String,Object> perStatus = new LinkedHashMap<>();
-        for (String status : STATUSES) {
-            JsonNode raw = original.path("perStatus").path(status);
-            Long statusExpected = nonNegative(raw.path("expectedCount"));
-            long count = statuses.get(status).count;
-            boolean failed = raw.hasNonNull("error") || raw.path("requestFailed").asBoolean(false);
-            boolean done = raw.path("complete").asBoolean(false) && !failed && statusExpected != null && count == statusExpected;
-            complete &= done;
-            Map<String,Object> item = new LinkedHashMap<>();
-            item.put("observedCount", count); item.put("expectedCount", statusExpected);
-            item.put("complete", done); item.put("requestFailed", failed);
-            item.put("truncated", raw.path("truncated").asBoolean(false));
-            perStatus.put(status, item);
+        for (var entry : statuses.entrySet()) {
+            Map<String,Object> item = statusCoverage(original.path("perStatus").path(entry.getKey()), entry.getValue().count);
+            complete &= Boolean.TRUE.equals(item.get("complete"));
+            perStatus.put(entry.getKey(), item);
         }
         result.put("complete", complete);
         result.put("observedCount", observed);
@@ -124,7 +126,28 @@ public final class TaskDiagnostics {
         return result;
     }
 
+    private static Map<String,Object> statusCoverage(JsonNode raw, long count) {
+        Long expected = nonNegative(raw.path("expectedCount"));
+        boolean failed = raw.hasNonNull("error") || raw.path("requestFailed").asBoolean(false);
+        boolean truncated = raw.path("truncated").asBoolean(false);
+        boolean complete = raw.path("complete").asBoolean(false) && !failed && !truncated && expected != null && count == expected;
+        Map<String,Object> result = new LinkedHashMap<>();
+        result.put("observedCount", count); result.put("expectedCount", expected);
+        result.put("complete", complete); result.put("requestFailed", failed); result.put("truncated", truncated);
+        return result;
+    }
+
     private record Workflow(String name, String type) {}
+
+    private static List<Map<String,Object>> failureRows(Map<Workflow,Long> groups, long observedFailures) {
+        return groups.entrySet().stream()
+                .sorted(Map.Entry.<Workflow,Long>comparingByValue().reversed()
+                        .thenComparing(entry -> entry.getKey().name()).thenComparing(entry -> entry.getKey().type()))
+                .map(entry -> Map.<String,Object>of("workflowName", entry.getKey().name(), "taskType", entry.getKey().type(),
+                        "count", entry.getValue(), "shareOfObservedPercent", percent(entry.getValue(), observedFailures)))
+                .toList();
+    }
+
     private static List<Map<String,Object>> workflowRows(Map<Workflow,Group> groups, long total, boolean aging) {
         List<Map<String,Object>> rows = new ArrayList<>();
         groups.entrySet().stream().sorted(groupOrder(aging)).limit(5).forEach(entry -> {

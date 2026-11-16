@@ -75,6 +75,7 @@ public final class WebServer implements AutoCloseable {
                 }
                 case "GET /api/status" -> json(exchange, 200, worker.status());
                 case "GET /api/tasks" -> json(exchange, 200, taskQueries.list(worker.configs.snapshot(), taskParams(exchange)));
+                case "POST /api/tasks/lookup" -> json(exchange, 200, taskQueries.lookup(worker.configs.snapshot(), body(exchange)));
                 case "GET /api/tasks/statistics" -> json(exchange, 200, taskQueries.statistics(worker.configs.snapshot(), taskParams(exchange)));
                 case "GET /api/tasks/diagnostics" -> json(exchange, 200, taskQueries.diagnostics(worker.configs.snapshot(), taskParams(exchange)));
                 case "POST /api/ai/start" -> json(exchange, 202, worker.startAiTask(body(exchange)));
@@ -98,7 +99,8 @@ public final class WebServer implements AutoCloseable {
                 }
                 default -> error(exchange, 404, new IllegalArgumentException("接口不存在或请求方式不正确。"), requestId);
             }
-        } catch (WorkerService.MissingCacheException e) { error(exchange, 409, e, requestId); }
+        } catch (TaskQueryService.TaskNotFoundException e) { error(exchange, 404, e, requestId); }
+        catch (WorkerService.MissingCacheException e) { error(exchange, 409, e, requestId); }
         catch (IllegalStateException e) { error(exchange, 409, e, requestId); }
         catch (IllegalArgumentException | com.fasterxml.jackson.core.JacksonException e) { error(exchange, 400, e, requestId); }
         catch (Exception e) { error(exchange, 502, e, requestId); }
