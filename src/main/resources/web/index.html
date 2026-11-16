@@ -138,31 +138,34 @@
     <div class="card-footer bg-white p-3 d-flex flex-wrap justify-content-between align-items-center gap-2"><span class="small text-body-secondary" id="tasks-page-info">—</span><div class="d-flex align-items-center gap-2"><label class="visually-hidden" for="tasks-page-size">每页条数</label><select class="form-select form-select-sm w-auto" id="tasks-page-size"><option value="20">20 条 / 页</option><option value="50" selected>50 条 / 页</option><option value="100">100 条 / 页</option></select><div class="btn-group btn-group-sm" role="group" aria-label="任务分页"><button type="button" class="btn btn-outline-secondary" id="tasks-prev" disabled>上一页</button><button type="button" class="btn btn-outline-secondary" id="tasks-next" disabled>下一页</button></div></div></div>
   </section>
 </section>
-<section id="view-task-lookup" class="view" aria-labelledby="task-lookup-title">
-  <header class="lookup-heading">
-    <h1 id="task-lookup-title">P0 单条任务查询</h1>
+<section id="view-task-lookup" class="view" lang="zh-CN" aria-labelledby="task-lookup-title">
+  <header class="lookup-top">
+    <a class="lookup-home" href="#overview"><span aria-hidden="true">←</span><span id="task-lookup-home">返回运营台</span></a>
+    <div class="lookup-language" id="task-lookup-language" role="group" aria-label="界面语言">
+      <button id="task-lookup-lang-zh" type="button" lang="zh-CN" aria-pressed="true">中文</button>
+      <button id="task-lookup-lang-en" type="button" lang="en" aria-pressed="false">English</button>
+    </div>
   </header>
-  <form id="task-lookup-form" class="lookup-panel" aria-label="单条任务查询条件">
-    <div class="lookup-field">
-      <label for="task-lookup-kind">查询方式</label>
+  <h1 id="task-lookup-title">单条任务查询</h1>
+  <form id="task-lookup-form" aria-labelledby="task-lookup-title">
+    <div class="lookup-fields">
+      <label class="visually-hidden" for="task-lookup-kind" id="task-lookup-kind-label">标识类型</label>
       <select class="form-select lookup-control" id="task-lookup-kind">
-        <option value="task_id">Task ID</option>
+        <option value="task_id">任务 ID</option>
         <option value="uuid">UUID</option>
       </select>
+      <label class="visually-hidden" for="task-lookup-value" id="task-lookup-label">任务 ID</label>
+      <input class="form-control lookup-control" id="task-lookup-value" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入任务 ID" required>
     </div>
-    <div class="lookup-field">
-      <label for="task-lookup-value" id="task-lookup-label">Task ID</label>
-      <input class="form-control font-monospace lookup-control" id="task-lookup-value" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-    </div>
-    <button type="submit" class="lookup-button" id="task-lookup-submit">查询任务</button>
+    <button id="task-lookup-submit" type="submit">查询</button>
   </form>
   <p class="lookup-message hidden" id="task-lookup-message" role="status"></p>
-  <section class="lookup-panel hidden" id="task-lookup-result" aria-labelledby="task-lookup-result-title">
+  <section class="hidden" id="task-lookup-result" aria-labelledby="task-lookup-result-title">
     <h2 id="task-lookup-result-title">任务详情</h2>
     <dl id="task-lookup-meta"></dl>
     <div class="lookup-json-heading">
       <h3 id="task-lookup-json-title">完整数据</h3>
-      <button class="lookup-button" type="button" id="task-lookup-copy">复制 JSON</button>
+      <button type="button" id="task-lookup-copy">复制 JSON</button>
     </div>
     <pre id="task-lookup-json" tabindex="0" aria-labelledby="task-lookup-json-title"></pre>
   </section>

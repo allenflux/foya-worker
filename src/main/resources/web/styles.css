@@ -162,34 +162,42 @@ textarea.form-control { padding: 13px 14px; line-height: 1.8; font-size: 13px; }
 .tasks-detail-grid dd { overflow-wrap: anywhere; }
 .tasks-detail-grid dt { font-weight: 400; color: var(--app-muted); }
 .app-shell:has(#view-task-lookup.active) { background: #fff; }
-#view-task-lookup { max-width: 1000px; margin-inline: auto; padding: 8px 0 40px; color: #171717; }
-.lookup-heading { margin-bottom: 22px; }
-.lookup-heading h1 { margin: 0; font-size: clamp(26px, 4vw, 32px); font-weight: 700; line-height: 1.25; }
-.lookup-panel { padding: 20px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
-#task-lookup-form { display: grid; grid-template-columns: minmax(108px, auto) minmax(0, 1fr) auto; align-items: end; gap: 14px; }
-.lookup-field { min-width: 0; }
-.lookup-field label { display: block; margin-bottom: 5px; font-size: 13px; color: #444; }
-#view-task-lookup .lookup-control { min-height: 36px; border-color: #ccc; border-radius: 5px; padding-block: 6px; color: #222; }
-#view-task-lookup .lookup-control:hover:not(:disabled) { border-color: #888; }
-.lookup-button { min-height: 34px; padding: 5px 12px; border: 1px solid #bbb; border-radius: 5px; background: #fff; color: #222; font: inherit; font-size: 13px; cursor: pointer; }
-#task-lookup-submit { min-width: 90px; min-height: 36px; border-color: #777; }
-.lookup-button:hover:not(:disabled) { border-color: #777; background: #f2f2f2; }
-.lookup-button:disabled { background: #f3f3f3; color: #666; cursor: default; }
-#view-task-lookup :is(.lookup-control, .lookup-button, pre):focus-visible { outline: 2px solid #505050; outline-offset: 2px; box-shadow: none; }
-.lookup-message { margin: 12px 0 0; color: #555; font-size: 13px; overflow-wrap: anywhere; }
+.app-shell:has(#view-task-lookup.active) :is(.site-header, .workspace-footer, #error-panel) { display: none; }
+#view-task-lookup { max-width: 780px; margin-inline: auto; padding: 10px 0 48px; color: #171717; }
+.lookup-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: clamp(42px, 8vw, 84px); }
+.lookup-home { display: inline-flex; align-items: center; gap: 6px; padding-block: 6px; color: #5c5c5c; font-size: 14px; text-decoration: none; }
+.lookup-home:hover { color: #171717; }
+.lookup-language { display: flex; gap: 2px; }
+.lookup-language button, #task-lookup-copy { min-height: 36px; border: 0; border-radius: 6px; background: transparent; color: #5c5c5c; font: inherit; font-size: 13px; cursor: pointer; padding: 5px 10px; }
+.lookup-language button:hover, .lookup-language button[aria-pressed="true"], #task-lookup-copy:hover { background: #f2f2f2; color: #171717; }
+.lookup-language button[aria-pressed="true"] { font-weight: 600; }
+#task-lookup-title { margin: 0 0 24px; font-size: clamp(32px, 5vw, 44px); font-weight: 700; line-height: 1.2; letter-spacing: -.035em; }
+#task-lookup-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.lookup-fields { display: grid; grid-template-columns: 106px minmax(0, 1fr); background: #f3f3f3; border-radius: 8px; padding: 3px; }
+#view-task-lookup .lookup-control { min-width: 0; min-height: 44px; border: 0; border-radius: 6px; box-shadow: none; background-color: transparent; color: #171717; font-size: 15px; }
+#task-lookup-kind { padding-left: 12px; cursor: pointer; }
+#task-lookup-kind:hover:not(:disabled) { background-color: #e9e9e9; }
+#task-lookup-value { padding-inline: 8px 12px; }
+#task-lookup-value::placeholder { color: #666; }
+#task-lookup-submit { min-width: 108px; min-height: 50px; padding: 0 16px; border: 0; border-radius: 8px; background: #222; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+#task-lookup-submit:hover:not(:disabled) { background: #404040; }
+#task-lookup-submit:disabled { opacity: .65; cursor: default; }
+#view-task-lookup :is(a, button, .lookup-control, pre):focus-visible { outline: 2px solid #484848; outline-offset: 2px; }
+#view-task-lookup .lookup-control:focus-visible { outline-offset: -1px; }
+.lookup-message { margin: 12px 0 0; color: #555; font-size: 14px; overflow-wrap: anywhere; }
 .lookup-message[data-state="error"] { color: #9c2929; }
-#task-lookup-result { margin-top: 16px; }
-#task-lookup-result h2 { margin: 0 0 14px; font-size: 18px; font-weight: 650; }
-#task-lookup-meta { display: grid; grid-template-columns: repeat(2, minmax(82px, 1fr) minmax(0, 2.5fr)); align-items: baseline; gap: 8px 12px; margin: 0 0 20px; font-size: 13px; }
+#task-lookup-result { margin-top: 38px; }
+#task-lookup-result h2 { margin: 0 0 14px; font-size: 19px; font-weight: 650; }
+#task-lookup-meta { display: grid; grid-template-columns: repeat(2, minmax(80px, 1fr) minmax(0, 2.25fr)); align-items: baseline; gap: 8px 14px; margin: 0 0 20px; font-size: 14px; }
 #task-lookup-meta > * { width: auto; margin: 0; overflow-wrap: anywhere; }
 #task-lookup-meta dt { color: #555; font-weight: 400; }
 .lookup-json-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .lookup-json-heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
-#task-lookup-json { max-height: 55vh; margin: 0; padding: 12px 14px; border-radius: 5px; overflow: auto; background: #f2f2f2; color: #222; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+#task-lookup-json { max-height: 55vh; margin: 0; padding: 14px 16px; border-radius: 8px; overflow: auto; background: #f3f3f3; color: #222; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 575px) {
-  .lookup-panel { padding: 16px; }
-  #task-lookup-form { grid-template-columns: 1fr; gap: 12px; }
-  #task-lookup-meta { grid-template-columns: minmax(82px, 1fr) minmax(0, 2.5fr); }
+  #task-lookup-form { grid-template-columns: minmax(0, 1fr); }
+  #view-task-lookup .lookup-control { font-size: 16px; }
+  #task-lookup-meta { grid-template-columns: minmax(80px, 1fr) minmax(0, 2.25fr); }
 }
 .modal-content { border: 1px solid var(--app-border); border-radius: 13px; box-shadow: 0 18px 70px rgb(25 42 70 / 14%); }
 .modal-header, .modal-footer { border-color: var(--app-line); padding: 18px 22px; }

@@ -6,6 +6,25 @@ window.P0Tasks = (() => {
   const esc = (value) => escapeHtml(value);
   const fmt = (value) => value == null ? '—' : number(value);
   const codes = ['0','1','2','3','-1'];
+  const lookupLanguages = {
+    'zh-CN': {
+      home:'返回运营台', title:'单条任务查询', identifier:'标识类型', language:'界面语言', taskId:'任务 ID',
+      placeholder:(id) => `输入${id === 'UUID' ? ' ' : ''}${id}`, search:'查询', searching:'查询中…',
+      details:'任务详情', json:'完整数据', copy:'复制 JSON', copied:'已复制 JSON。', copyFailed:'复制失败，请手动复制 JSON。',
+      missing:(id) => `请输入${id === 'UUID' ? ' ' : ''}${id}。`, notFound:'未找到匹配的任务。', found:'已找到任务。',
+      invalid:'请检查任务标识的格式。', unauthorized:'P0 拒绝了此查询（HTTP 401）。', forbidden:'P0 拒绝了此查询（HTTP 403）。',
+      failed:'查询失败，请稍后重试。'
+    },
+    en: {
+      home:'Dashboard', title:'Task lookup', identifier:'Identifier type', language:'Language', taskId:'Task ID',
+      placeholder:(id) => `Enter ${id}`, search:'Look up', searching:'Looking up…',
+      details:'Task details', json:'Raw JSON', copy:'Copy JSON', copied:'JSON copied.', copyFailed:'Could not copy. Select and copy the JSON manually.',
+      missing:(id) => `Enter a ${id}.`, notFound:'No matching task found.', found:'Task found.',
+      invalid:'Check the identifier and try again.', unauthorized:'P0 declined the request (HTTP 401).', forbidden:'P0 declined the request (HTTP 403).',
+      failed:'Could not look up the task. Try again.'
+    }
+  };
+  const appTitle = document.title;
   let config = null;
   let applied = null;
   let pageData = null;
@@ -22,6 +41,10 @@ window.P0Tasks = (() => {
   let listBusy = false;
   let statsBusy = false;
   let lookupController = null;
+  let lookupLanguage = 'zh-CN';
+  let lookupResult = null;
+  let lookupMessageKey = '';
+  try {if (localStorage.getItem('p0-lookup-language') === 'en') lookupLanguage = 'en';} catch { /* Storage can be unavailable. */ }
 
   const first = (row, names) => {
     for (const name of names) {
@@ -35,7 +58,10 @@ window.P0Tasks = (() => {
   const taskType = (row) => scalar(first(row,['task_type','taskType','type']));
   const workflowName = (row) => scalar(first(row,['workflow_name','workflowName']));
   const channel = (row) => scalar(first(row,['hash_key','hashKey','user_hash','userHash']));
-  const statusLabel = (value) => ({'-1':'失败 · -1','0':'处理中 · 0','1':'旧状态 · 1','2':'成功 · 2','3':'加水印中 · 3'}[String(value)] || `状态 ${value ?? '未知'}`);
+  const statusLabel = (value, english=false) => {
+    if (english) return ({'-1':'Failed · -1','0':'Processing · 0','1':'Legacy status · 1','2':'Succeeded · 2','3':'Watermarking · 3'}[String(value)] || `Status ${value === '' ? 'unknown' : value}`);
+    return ({'-1':'失败 · -1','0':'处理中 · 0','1':'旧状态 · 1','2':'成功 · 2','3':'加水印中 · 3'}[String(value)] || `状态 ${value === '' ? '未知' : value ?? '未知'}`);
+  };
   const filterCaption = (query) => [['工作流',query.task_type],['HashKey',query.hash_key],['任务 ID',query.task_id]].filter(([,value]) => value).map(([name,value]) => `${name} ${compact(value,32)}`).join(' · ');
   const displayTime = (value) => {
     if (value === '' || value == null) return '—';
@@ -372,17 +398,22 @@ window.P0Tasks = (() => {
     return esc(text || '—');
   }
 
-  function renderDetail(row, prefix) {
+  function renderDetail(row, prefix, english=false) {
     const status = first(row,['status','task_status','taskStatus']);
+    const lookup = prefix === 'task-lookup';
     const fields = [
-      ['任务 ID',taskId(row)],['记录 UUID',row.uuid],['Workflow name',workflowName(row)],['Task type',taskType(row)],
-      ['状态',statusLabel(status === '' ? '未知' : status)],['错误码',first(row,['error_code','errorCode'])],
-      ['场景',first(row,['scene_name','sceneName'])],['渠道',row.channelName || '未分類'],['HashKey',channel(row)],
-      ['用户标识',first(row,['user_id','userId','user_identifier'])],['创建时间',displayTime(first(row,['created_at','createdAt','create_time']))],
-      ['更新时间',displayTime(first(row,['updated_at','updatedAt','update_time']))],['ComfyUI 地址',first(row,['comfyui_url','comfyui_address','comfyuiUrl','comfyuiAddress','comfyui'])],
-      ['上游 fee',row.fee]
+      ['任务 ID','Task ID',taskId(row)],['记录 UUID','Record UUID',row.uuid],
+      [lookup ? '工作流名称' : 'Workflow name','Workflow name',workflowName(row)],
+      [lookup ? '任务类型' : 'Task type','Task type',taskType(row)],
+      ['状态','Status',statusLabel(status,english)],['错误码','Error code',first(row,['error_code','errorCode'])],
+      ['场景','Scene',first(row,['scene_name','sceneName'])],['渠道','Channel',english && !channel(row) ? 'Unclassified' : row.channelName || '未分類'],
+      ['HashKey','HashKey',channel(row)],['用户标识','User ID',first(row,['user_id','userId','user_identifier'])],
+      ['创建时间','Created',displayTime(first(row,['created_at','createdAt','create_time']))],
+      ['更新时间','Updated',displayTime(first(row,['updated_at','updatedAt','update_time']))],
+      ['ComfyUI 地址','ComfyUI URL',first(row,['comfyui_url','comfyui_address','comfyuiUrl','comfyuiAddress','comfyui'])],
+      ['上游 fee','Upstream fee',row.fee]
     ];
-    el(`${prefix}-meta`).innerHTML = fields.filter(([,value]) => value !== '' && value != null).map(([label,value]) => `<dt class="col-sm-2">${esc(label)}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
+    el(`${prefix}-meta`).innerHTML = fields.filter(([,,value]) => value !== '' && value != null).map(([zh,en,value]) => `<dt class="col-sm-2">${esc(english ? en : zh)}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
     el(`${prefix}-json`).textContent = JSON.stringify(row,null,2);
   }
 
@@ -393,14 +424,55 @@ window.P0Tasks = (() => {
     bootstrap.Modal.getOrCreateInstance(el('tasks-detail-dialog')).show();
   }
 
-  function lookupMessage(message,state='') {
+  function lookupMessage(key) {
+    lookupMessageKey = key;
     const output = el('task-lookup-message');
-    output.textContent = message;
-    output.dataset.state = state;
-    output.classList.toggle('hidden',!message);
+    output.textContent = lookupLanguages[lookupLanguage][key] || '';
+    output.dataset.state = ['invalid','unauthorized','forbidden','failed'].includes(key) ? 'error' : '';
+    output.classList.toggle('visually-hidden',key === 'found' || key === 'searching');
+    output.classList.toggle('hidden',!key);
+  }
+
+  function lookupIdentifier() {
+    return el('task-lookup-kind').value === 'uuid' ? 'UUID' : lookupLanguages[lookupLanguage].taskId;
+  }
+
+  function updateLookupTitle() {
+    document.title = location.hash === '#task-lookup' ? `${lookupLanguages[lookupLanguage].title} · AIAPI` : appTitle;
+  }
+
+  function renderLookupLanguage() {
+    const labels = lookupLanguages[lookupLanguage];
+    const kind = el('task-lookup-kind');
+    el('view-task-lookup').lang = lookupLanguage;
+    el('task-lookup-language').setAttribute('aria-label',labels.language);
+    el('task-lookup-lang-zh').setAttribute('aria-pressed',String(lookupLanguage === 'zh-CN'));
+    el('task-lookup-lang-en').setAttribute('aria-pressed',String(lookupLanguage === 'en'));
+    el('task-lookup-home').textContent = labels.home;
+    el('task-lookup-title').textContent = labels.title;
+    el('task-lookup-kind-label').textContent = labels.identifier;
+    kind.querySelector('[value="task_id"]').textContent = labels.taskId;
+    el('task-lookup-label').textContent = lookupIdentifier();
+    const input = el('task-lookup-value');
+    input.placeholder = labels.placeholder(lookupIdentifier());
+    input.setCustomValidity('');
+    el('task-lookup-submit').textContent = lookupController ? labels.searching : labels.search;
+    el('task-lookup-result-title').textContent = labels.details;
+    el('task-lookup-json-title').textContent = labels.json;
+    el('task-lookup-copy').textContent = labels.copy;
+    lookupMessage(lookupMessageKey);
+    if (lookupResult) renderDetail(lookupResult,'task-lookup',lookupLanguage === 'en');
+    updateLookupTitle();
+  }
+
+  function setLookupLanguage(language) {
+    lookupLanguage = language;
+    try {localStorage.setItem('p0-lookup-language',language);} catch { /* The current page still uses this language. */ }
+    renderLookupLanguage();
   }
 
   function clearLookup() {
+    lookupResult = null;
     el('task-lookup-value').setCustomValidity('');
     el('task-lookup-result').classList.add('hidden');
     el('task-lookup-meta').textContent = '';
@@ -415,45 +487,55 @@ window.P0Tasks = (() => {
     const input = el('task-lookup-value');
     const value = kind.value === 'uuid' ? input.value.trim() : input.value;
     if (!value.trim()) {
-      input.setCustomValidity(`请输入${el('task-lookup-label').textContent}。`);
+      input.setCustomValidity(lookupLanguages[lookupLanguage].missing(lookupIdentifier()));
       input.reportValidity();
       return;
     }
     const controller = lookupController = new AbortController();
     const button = el('task-lookup-submit');
-    const notFound = '未找到匹配的任务，请核对输入的标识。';
     const payload = {[kind.value]:value};
     clearLookup();
     kind.disabled = input.disabled = button.disabled = true;
-    button.textContent = '查询中…';
-    lookupMessage('正在查询 P0…');
+    button.textContent = lookupLanguages[lookupLanguage].searching;
+    lookupMessage('searching');
     try {
       const {task} = await api('/api/tasks/lookup',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
       if (controller.signal.aborted) return;
       if (task === null) {
-        lookupMessage(notFound);
+        lookupMessage('notFound');
         return;
       }
-      if (!task || typeof task !== 'object' || Array.isArray(task)) throw new Error('P0 未返回有效的任务详情，请稍后重试。');
-      renderDetail(task,'task-lookup');
+      if (!task || typeof task !== 'object' || Array.isArray(task)) {
+        lookupMessage('failed');
+        return;
+      }
+      lookupResult = task;
+      renderDetail(task,'task-lookup',lookupLanguage === 'en');
       el('task-lookup-result').classList.remove('hidden');
-      lookupMessage('找到 1 条任务。');
+      lookupMessage('found');
     } catch (error) {
       if (controller.signal.aborted) return;
-      if (error.status === 404) lookupMessage(notFound);
-      else lookupMessage(errorText(error,'P0 单条任务查询'),'error');
+      if (error.status === 404) lookupMessage('notFound');
+      else if (error.status === 400) lookupMessage('invalid');
+      else if (error.status === 401 || /\bHTTP 401\b/.test(error.message)) lookupMessage('unauthorized');
+      else if (error.status === 403 || /\bHTTP 403\b/.test(error.message)) lookupMessage('forbidden');
+      else lookupMessage('failed');
     } finally {
       lookupController = null;
       kind.disabled = input.disabled = button.disabled = false;
-      button.textContent = '查询任务';
+      button.textContent = lookupLanguages[lookupLanguage].search;
     }
   }
 
   async function copyDetail(prefix) {
     const data = el(`${prefix}-json`).textContent;
     if (!data) return;
-    try {await copyText(data);toast('任务数据已复制。');}
-    catch(error) {errorText(error,'复制任务详情');}
+    const lookup = prefix === 'task-lookup';
+    try {await copyText(data);toast(lookup ? lookupLanguages[lookupLanguage].copied : '任务数据已复制。');}
+    catch(error) {
+      if (lookup) toast(lookupLanguages[lookupLanguage].copyFailed,true);
+      else errorText(error,'复制任务详情');
+    }
   }
 
   function exportPage() {
@@ -569,12 +651,19 @@ window.P0Tasks = (() => {
   });
   el('tasks-copy-detail').addEventListener('click',() => copyDetail('tasks-detail'));
   el('task-lookup-form').addEventListener('submit',lookupTask);
-  el('task-lookup-kind').addEventListener('change',(event) => {
-    el('task-lookup-label').textContent = event.target.value === 'uuid' ? 'UUID' : 'Task ID';
+  el('task-lookup-kind').addEventListener('change',() => {
     clearLookup();
+    renderLookupLanguage();
   });
   el('task-lookup-value').addEventListener('input',clearLookup);
+  el('task-lookup-value').addEventListener('invalid',(event) => {
+    if (event.target.validity.valueMissing) event.target.setCustomValidity(lookupLanguages[lookupLanguage].missing(lookupIdentifier()));
+  });
+  el('task-lookup-lang-zh').addEventListener('click',() => setLookupLanguage('zh-CN'));
+  el('task-lookup-lang-en').addEventListener('click',() => setLookupLanguage('en'));
   el('task-lookup-copy').addEventListener('click',() => copyDetail('task-lookup'));
+  window.addEventListener('hashchange',updateLookupTitle);
+  renderLookupLanguage();
   el('tasks-export').addEventListener('click',exportPage);
   el('tasks-ai-generate').addEventListener('click',generateAi);
   el('tasks-ai-cancel').addEventListener('click',() => stopAi(true));
