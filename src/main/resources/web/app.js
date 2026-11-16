@@ -238,7 +238,12 @@ function renderViewName() {
 function setView() {
   const target = renderViewName();
   document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active',el.id === `view-${target}`));
-  document.querySelectorAll('.nav a').forEach((el) => el.classList.toggle('active',el.dataset.view === target));
+  document.querySelectorAll('.workspace-nav a').forEach((link) => {
+    const active = link.dataset.view === target;
+    link.classList.toggle('active',active);
+    if (active) link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  });
   if (target === 'logs') refreshStatus().catch(handleError);
   if (target === 'tasks') window.P0Tasks?.activate();
 }
