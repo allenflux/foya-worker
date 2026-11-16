@@ -113,11 +113,13 @@ public final class P0Client {
         Page page = request(config, resolveApiKey(config), start, start.plusHours(1), 1, 1, () -> {});
         long missingFee = page.tasks().stream().filter(task -> task.fee() == null).count();
         long unclassified = page.tasks().stream().filter(task -> task.hashKey().isBlank()).count();
+        long missingType = page.tasks().stream().filter(task -> task.taskType().isBlank()).count();
         String message = page.tasks().isEmpty() ? "p0 接口连通，查询时段暂无记录；任务字段需在有数据时进一步验证"
                 : page.tasks().stream().anyMatch(task -> task.createdAt() == null) ? "p0 接口连通，但任务缺少创建时间，当前响应无法安全进行按日汇总"
                 : "p0 接口连通，任务数组及单数统计字段校验通过";
         if (missingFee > 0) message += "；fee 金额未提供或无效，单数统计可继续，金额显示为未提供";
         if (unclassified > 0) message += "；探测记录中有 " + unclassified + " 条缺少渠道标识，归入未分類，单数统计正常";
+        if (missingType > 0) message += "；探测记录中有 " + missingType + " 条缺少工作流类型，归入未提供类型，单数统计正常";
         return Map.of("ok", true, "message", message, "sampleCount", page.tasks().size(), "missingFeeCount", missingFee,
                 "unclassifiedCount", unclassified);
     }
@@ -248,7 +250,6 @@ public final class P0Client {
                 throw new IOException("status=2 查询中出现非成功任务，请确认接口筛选语义");
             String hash = channelHash(row);
             String type = workflow(row);
-            if (type.isBlank()) throw new IOException("任务 task_type 不能为空");
             JsonNode feeValue = row.get("fee");
             BigDecimal fee = null;
             String feeWarning = null;
@@ -307,23 +308,13 @@ public final class P0Client {
         return "";
     }
 
-    private static String required(JsonNode row, String... fields) throws IOException {
-        for (String field : fields) {
-            JsonNode node = row.get(field);
-            if (node != null && !node.isNull() && (node.isNumber() || node.isTextual())) return node.asText();
-        }
-        throw new IOException("任务缺少有效 " + fields[0]);
-    }
-
-    private static String workflow(JsonNode row) throws IOException {
-        for (String field : List.of("task_type", "taskType")) if (row.hasNonNull(field)) return required(row, field);
-        JsonNode task = row.get("task");
-        if (task != null && !task.isNull()) {
-            if (task.isObject()) return required(task, "task_type", "taskType", "type", "key", "name");
-            if (task.isTextual() || task.isNumber()) return task.asText();
-            throw new IOException("任务 task 字段格式无法识别");
-        }
-        return required(row, "type");
+    private static String workflow(JsonNode row) {
+        String type = firstText(row, "task_type", "taskType");
+        if (type != null) return type;
+        JsonNode task = row.path("task");
+        type = task.isObject() ? firstText(task, "task_type", "taskType", "type", "key", "name") : firstText(row, "task");
+        if (type != null) return type;
+        return Objects.toString(firstText(row, "type"), "");
     }
 
     private static String firstText(JsonNode row, String... fields) {

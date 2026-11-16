@@ -118,7 +118,8 @@ public final class ReportService {
             return view;
         }
         for (DailyStats.Bucket bucket : source.buckets) {
-            BigDecimal price = config.taskTypePrices == null ? null : config.taskTypePrices.get(bucket.taskType());
+            BigDecimal price = bucket.taskType().isBlank() || config.taskTypePrices == null
+                    ? null : config.taskTypePrices.get(bucket.taskType());
             if (price != null && price.signum() < 0) throw new IllegalArgumentException("工作流单价不能为负数");
             BigDecimal fee = price == null ? BigDecimal.ZERO : price.multiply(BigDecimal.valueOf(bucket.count()));
             long missing = price == null ? bucket.count() : 0;
@@ -134,6 +135,7 @@ public final class ReportService {
         return key.isBlank() ? "未分類" : key;
     }
     private static String workflowName(String key, AppConfig config) {
+        if (key.isBlank()) return "未提供类型";
         return config.workflowNames != null ? config.workflowNames.getOrDefault(key, key) : key;
     }
     private static String clean(String name) { return name.replaceAll("[\\r\\n\\t｜]", " "); }

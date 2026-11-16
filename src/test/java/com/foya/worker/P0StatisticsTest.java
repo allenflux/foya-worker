@@ -161,6 +161,57 @@ class P0StatisticsTest {
         assertEquals(Set.of("17", "workflow-label"), new HashSet<>(stats.buckets.stream().map(DailyStats.Bucket::taskType).toList()));
     }
 
+    @Test void usesFirstValidTypeAliasAndKeepsRecordsWithoutOne() throws Exception {
+        var document = Json.MAPPER.readTree("""
+                [
+                  {"id":"a","task_type":"primary","taskType":"camel","task":{"type":"nested"},"type":"top"},
+                  {"id":"b","task_type":{},"taskType":0,"task":"nested","type":"top"},
+                  {"id":"c","task_type":" ","taskType":true,"task":{"task_type":[],"type":"nested"},"type":"top"},
+                  {"id":"d","task":19,"type":"top"},
+                  {"id":"e","task":{"type":" "},"type":"top"},
+                  {"id":"f","task":false,"type":22},
+                  {"id":"g","task_type":null,"taskType":" ","task":[],"type":{}},
+                  {"id":"h","type":null},
+                  {"id":"i"}
+                ]
+                """);
+        P0Client.Page page = P0Client.decode(document, ZoneId.of("UTC"));
+        assertEquals(List.of("primary", "0", "nested", "19", "top", "22", "", "", ""),
+                page.tasks().stream().map(P0Client.Task::taskType).toList());
+    }
+
+    @Test void missingTypesCountThroughFullDayCacheAndReportWithoutAConfiguredPrice() throws Exception {
+        serve(q -> {
+            String start = q.get("start_time");
+            return "{\"data\":{\"total\":3,\"list\":["
+                    + row(start + "-known", "h", "w", "1", start) + ","
+                    + "{\"id\":\"" + start + "-missing\",\"status\":2,\"hash_key\":\"h\",\"fee\":10,\"created_at\":\"" + start + "\"},"
+                    + "{\"id\":\"" + start + "-invalid\",\"status\":2,\"hash_key\":\"h\",\"fee\":10,\"type\":false,\"created_at\":\"" + start + "\"}]}}";
+        });
+        config.reportDays = 1;
+        config.amountsEnabled = true;
+        config.taskTypePrices.put("w", new BigDecimal("2.50"));
+        config.workflowNames.put("w", "已知工作流");
+        LocalDate date = LocalDate.of(2024, 1, 2);
+        StatsService stats = new StatsService(new LocalTestDailyCacheStore(dir));
+        assertEquals(72, stats.pullDay(config, date, false, null).totalCount);
+
+        StatsService restarted = new StatsService(new LocalTestDailyCacheStore(dir));
+        DailyStats cached = restarted.pullDay(config, date, false, null);
+        assertEquals(24, requests.get(), "completed day must be reusable without requesting p0 again");
+        assertEquals(72, cached.totalCount);
+        assertEquals(2, cached.buckets.size());
+        assertEquals(48, cached.buckets.stream().filter(bucket -> bucket.taskType().isEmpty()).findFirst().orElseThrow().count());
+
+        ReportService.Report report = new ReportService().build(config, List.of(cached));
+        assertEquals("count", report.channelsBy());
+        assertEquals(48, report.missingFeeCount());
+        assertEquals(new BigDecimal("60.00"), report.daily().getFirst().totalFee);
+        assertTrue(report.text().contains("01/02｜72｜未统计"));
+        assertTrue(report.text().contains("未提供类型｜48｜66.7%"));
+        assertTrue(report.text().contains("已知工作流｜24｜33.3%"));
+    }
+
     @Test void invalidJsonErrorNeverEchoesUpstreamContent() throws Exception {
         serve(q -> "sensitive-upstream-response-do-not-log");
         Exception error = assertThrows(Exception.class, () -> new P0Client().testConnection(config));
