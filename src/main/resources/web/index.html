@@ -13,7 +13,7 @@
   <script src="/app.js" defer></script>
   <script src="/tasks.js" defer></script>
 </head>
-<body class="app-shell">
+<body class="app-shell" data-view="home">
 <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 7V3m-2 0h4M1 12v5m22-5v5M8 12h.01M16 12h.01M9 16h6"/></symbol>
@@ -31,19 +31,13 @@
  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h5m4 0h7M4 12h10m4 0h2M4 17h2m4 0h10"/><circle cx="11" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+ <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
 </defs></svg>
 <header class="site-header">
   <div class="header-inner">
     <a class="brand-lockup" href="#home" aria-label="AIAPI 首页" data-en-aria-label="AIAPI home"><span class="brand-mark" aria-hidden="true">AI</span><span class="brand-name">AIAPI</span></a>
-    <nav class="nav workspace-nav" aria-label="主导航" data-en-aria-label="Main navigation">
-      <a class="nav-link active" href="#home" data-view="home" data-en="Home" aria-current="page">首页</a>
-      <a class="nav-link" href="#overview" data-view="overview" data-en="Daily stats">日统计</a>
-      <a class="nav-link" href="#tasks" data-view="tasks" data-en="P0 tasks">P0 任务</a>
-      <a class="nav-link" href="#task-lookup" data-view="task-lookup" data-en="Task lookup">单条查询</a>
-      <a class="nav-link" href="#settings" data-view="settings" data-en="Settings">配置</a>
-      <a class="nav-link" href="#mappings" data-view="mappings" data-en="Mappings">映射</a>
-      <a class="nav-link" href="#logs" data-view="logs" data-en="Logs">记录</a>
-    </nav>
+    <a class="workspace-back" href="#home" aria-label="返回首页" data-en-aria-label="Back to home"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg><span data-en="Home">首页</span></a>
+    <span class="workspace-current" id="breadcrumb-current" aria-current="page"></span>
     <div class="header-actions">
       <div class="service-state"><span class="connection-dot" id="connection-dot"></span><span id="connection-text" data-en="Connecting…">正在连接服务</span></div>
       <div class="app-language" role="group" aria-label="界面语言" data-en-aria-label="Language">
@@ -52,7 +46,7 @@
       </div>
     </div>
   </div>
-</header><main class="container-fluid p-3 workspace-main"><span id="breadcrumb-current" class="d-none"></span><section id="error-panel" class="alert alert-danger hidden mb-3" role="alert" aria-labelledby="error-title"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><strong id="error-title" data-en="Latest error">最近一次错误</strong><div class="d-flex gap-2"><button type="button" class="btn btn-outline-danger btn-sm" id="copy-error" data-en="Copy error details">复制错误详情</button><button type="button" class="btn btn-outline-secondary btn-sm" id="clear-error" data-en="Clear">清除</button></div></div><div id="error-message" class="small text-break"></div><details class="mt-2"><summary class="small" data-en="Show redacted details">查看脱敏详情（可复制反馈）</summary><pre id="error-details" class="font-monospace small border rounded bg-white p-2 mt-2 mb-0 overflow-auto"></pre></details></section>
+</header><main class="container-fluid p-3 workspace-main"><section id="error-panel" class="alert alert-danger hidden mb-3" role="alert" aria-labelledby="error-title"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><strong id="error-title" data-en="Latest error">最近一次错误</strong><div class="d-flex gap-2"><button type="button" class="btn btn-outline-danger btn-sm" id="copy-error" data-en="Copy error details">复制错误详情</button><button type="button" class="btn btn-outline-secondary btn-sm" id="clear-error" data-en="Clear">清除</button></div></div><div id="error-message" class="small text-break"></div><details class="mt-2"><summary class="small" data-en="Show redacted details">查看脱敏详情（可复制反馈）</summary><pre id="error-details" class="font-monospace small border rounded bg-white p-2 mt-2 mb-0 overflow-auto"></pre></details></section>
 <section id="view-home" class="view active" aria-labelledby="home-title">
   <header class="home-hero">
     <img class="home-hero-image" src="/workspace-hero.webp" width="2172" height="724" alt="" fetchpriority="high">

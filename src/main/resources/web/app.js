@@ -6,12 +6,12 @@ const state = {view:'home', config:null, report:null, summary:null, status:null,
 let botSequence = 0;
 const viewNames = {
   home:['首页','Home'],
-  overview:['日统计','Daily report'],
+  overview:['日统计','Daily stats'],
   tasks:['P0 任务','P0 tasks'],
   'task-lookup':['单条任务查询','Task lookup'],
   settings:['配置','Settings'],
   mappings:['映射','Mappings'],
-  logs:['记录','Activity']
+  logs:['记录','Logs']
 };
 let reportAiController = null;
 let overviewOpened = false;
@@ -109,15 +109,30 @@ async function copyText(text) {
     try {await navigator.clipboard.writeText(text);return;} catch { /* HTTP and denied clipboard access use the fallback below. */ }
   }
   const previousFocus = document.activeElement;
+  const scrollers = new Set([document.scrollingElement]);
+  for (let element = previousFocus; element; element = element.parentElement) {
+    if (element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight) scrollers.add(element);
+  }
+  const scrollPositions = [...scrollers].filter(Boolean).map((element) => [element, element.scrollLeft, element.scrollTop]);
   const input = document.createElement('textarea');
   input.value = text;
-  input.className = 'visually-hidden position-fixed';
-  input.setAttribute('readonly','');
-  document.body.append(input);
+  input.className = 'clipboard-proxy';
+  input.readOnly = true;
+  input.tabIndex = -1;
+  // Keep the copy field inside the Bootstrap focus trap when a modal is open.
+  (document.querySelector('.modal.show') || document.body).append(input);
   try {
-    input.focus();input.select();input.setSelectionRange(0,input.value.length);
+    input.focus({preventScroll:true});
+    input.setSelectionRange(0,input.value.length);
     if (!document.execCommand('copy')) throw new Error(appText('无法自动复制，请展开详情后手动复制。','Could not copy automatically. Open the details and copy the text manually.'));
-  } finally {input.remove();previousFocus?.focus?.();}
+  } finally {
+    input.remove();
+    if (previousFocus?.isConnected) previousFocus.focus?.({preventScroll:true});
+    for (const [element, left, top] of scrollPositions) {
+      if (element.scrollLeft !== left) element.scrollLeft = left;
+      if (element.scrollTop !== top) element.scrollTop = top;
+    }
+  }
 }
 
 async function api(path, options={}) {
@@ -240,16 +255,18 @@ function renderViewName() {
   return target;
 }
 
-function setView() {
+function setView(event) {
   const target = renderViewName();
+  const switched = state.view !== target;
   state.view = target;
+  document.body.dataset.view = target;
   document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active',el.id === `view-${target}`));
-  document.querySelectorAll('.site-header a[data-view]').forEach((link) => {
-    const active = link.dataset.view === target;
-    link.classList.toggle('active',active);
-    if (active) link.setAttribute('aria-current','page');
-    else link.removeAttribute('aria-current');
-  });
+  if (event && switched) {
+    window.scrollTo(0,0);
+    const heading = $(`#view-${target} h1`);
+    heading.tabIndex = -1;
+    heading.focus({preventScroll:true});
+  }
   if (target === 'logs' && state.config) refreshStatus().catch(handleError);
   if (target === 'tasks') window.P0Tasks?.activate();
   loadModule(target);
