@@ -112,6 +112,35 @@ class TaskLookupTest {
         assertTrue(Json.MAPPER.readTree(rejected.body()).path("error").asText().contains("拒绝匿名查询"));
     }
 
+    @Test void confinesTheDedicatedKeyToUuidRequestsToItsOwnOrigin() throws Exception {
+        String uuidKey = "P0_TEST_UUID_KEY";
+        AppConfig config = worker.configs.snapshot();
+        URI origin = URI.create(config.p0Endpoint).resolve("/");
+        TaskQueryService service = new TaskQueryService(Duration.ofSeconds(5), uuidKey, origin);
+        JsonNode uuid = Json.MAPPER.valueToTree(Map.of("uuid", UUID));
+
+        reply = new Reply(200, """
+                {"uuid":"%s","note":"%s"}
+                """.formatted(UUID, uuidKey));
+        JsonNode result = Json.MAPPER.valueToTree(service.lookup(config, uuid));
+        assertEquals(UUID, result.path("task").path("uuid").asText());
+        assertFalse(result.toString().contains(uuidKey));
+
+        config.p0ApiKey = "";
+        reply = new Reply(200, """
+                {"page":1,"page_size":1,"total_count":1,"tasks":[{"task_id":"task-a"}]}
+                """);
+        service.lookup(config, Json.MAPPER.valueToTree(Map.of("task_id", "task-a")));
+
+        config.p0Endpoint = "http://localhost:" + upstream.getAddress().getPort() + "/api/tasks/list";
+        reply = new Reply(200, "{\"uuid\":\"" + UUID + "\"}");
+        service.lookup(config, uuid);
+        assertEquals(List.of(
+                new Request("GET", "/api/public/task/uuid?uuid=" + UUID, uuidKey, "application/json", null),
+                new Request("GET", "/api/tasks/list?page=1&page_size=1&task_id=task-a", null, "application/json", "true"),
+                new Request("GET", "/api/public/task/uuid?uuid=" + UUID, null, "application/json", null)), requests);
+    }
+
     @Test void looksUpTaskIdWithOneAnonymousExactPageAndChecksTheReturnedIdentity() throws Exception {
         worker.configs.update(Json.MAPPER.valueToTree(Map.of("clearP0ApiKey", true)));
         Map<String, String> input = Map.of("task_id", "task a+b?c&d");

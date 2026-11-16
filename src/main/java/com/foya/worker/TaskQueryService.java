@@ -19,13 +19,21 @@ import java.util.regex.Pattern;
 /** Interactive, read-only P0 queries; its deadline and retries are independent of batch pulls. */
 public final class TaskQueryService {
     static final List<Integer> STATUSES = List.of(-1, 0, 1, 2, 3);
+    private static final URI P0_PUBLIC_ORIGIN = URI.create("https://p0-api.inaiai.com/");
     private static final Pattern SENSITIVE_FIELD = Pattern.compile(".*(apikey|api_key|token|authorization|password|secret|credential|cookie).*", Pattern.CASE_INSENSITIVE);
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
             .followRedirects(HttpClient.Redirect.NEVER).build();
     private final Duration budget;
+    private final String uuidApiKey;
+    private final URI uuidApiOrigin;
 
     public TaskQueryService() { this(Duration.ofSeconds(20)); }
-    TaskQueryService(Duration budget) { this.budget = budget; }
+    TaskQueryService(Duration budget) { this(budget, System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN); }
+    TaskQueryService(Duration budget, String uuidApiKey, URI uuidApiOrigin) {
+        this.budget = budget;
+        this.uuidApiKey = Objects.toString(uuidApiKey, "").strip();
+        this.uuidApiOrigin = uuidApiOrigin;
+    }
 
     record Window(ZonedDateTime start, ZonedDateTime end, Map<String, String> filters) {}
     record Page(List<JsonNode> rows, Long total, Boolean hasMore, int pageSize) {}
@@ -90,11 +98,14 @@ public final class TaskQueryService {
             throw new IllegalArgumentException("请输入有效的 UUID 或 Task ID，最多 256 字符且不能含控制字符。");
         if (byUuid) id = id.strip();
 
-        String key = P0Client.resolveApiKey(config);
         URI source = URI.create(config.p0Endpoint);
+        URI origin = "p0-function.inaiai.com".equalsIgnoreCase(source.getHost()) ? P0_PUBLIC_ORIGIN : source.resolve("/");
+        // The P0 source can be changed in Settings. Limit the UUID key to its own origin.
+        String key = byUuid && !uuidApiKey.isBlank() && uuidApiOrigin.equals(origin)
+                ? uuidApiKey : P0Client.resolveApiKey(config);
         String[] identityFields = byUuid ? new String[]{"uuid"} : new String[]{"task_id", "taskId"};
         JsonNode task = key.isBlank() && !byUuid ? lookupAnonymousTaskId(source, id, deadline)
-                : lookupPublicTask(source, field, id, key, identityFields, deadline);
+                : lookupPublicTask(origin, field, id, key, identityFields, deadline);
         String found = text(task, identityFields);
         if (!(byUuid ? id.equalsIgnoreCase(found) : id.equals(found)))
             throw new IOException("P0 返回的任务与查询标识不一致。");
@@ -112,10 +123,8 @@ public final class TaskQueryService {
         return page.rows().getFirst();
     }
 
-    private JsonNode lookupPublicTask(URI source, String field, String id, String key, String[] identityFields,
+    private JsonNode lookupPublicTask(URI origin, String field, String id, String key, String[] identityFields,
                                       long deadline) throws Exception {
-        URI origin = "p0-function.inaiai.com".equalsIgnoreCase(source.getHost())
-                ? URI.create("https://p0-api.inaiai.com") : source;
         String path = "uuid".equals(field) ? "/api/public/task/uuid" : "/api/public/task";
         HttpResponse<String> response = get(origin.resolve(path + "?" + field + "=" + encode(id)), key, deadline, false);
         checkLookupStatus(response.statusCode(), key);
