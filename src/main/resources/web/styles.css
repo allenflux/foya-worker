@@ -103,6 +103,11 @@ a { text-underline-offset: 3px; }
 #home-title { width: fit-content; margin: 0 0 20px; }
 .home-tool-list { margin: 0; padding: 0; list-style: none; }
 .home-tool-list li + li { border-top: 1px solid var(--app-line); }
+@media (min-width: 768px) {
+  .home-tool-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
+  .home-tool-list > li { display: grid; }
+  .home-tool-list > li:nth-child(2) { border-top: 0; }
+}
 .home-tool {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
