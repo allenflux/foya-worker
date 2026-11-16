@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -133,6 +134,13 @@ class WebServerTest {
         HttpResponse<String> language = send(request("/language.js").GET());
         assertEquals(200, language.statusCode());
         assertTrue(language.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"));
+
+        assertTrue(response.body().contains("id=\"view-home\""));
+        assertTrue(response.body().contains("/workspace-hero.webp"));
+        var hero = client.send(request("/workspace-hero.webp").GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, hero.statusCode());
+        assertEquals("image/webp", hero.headers().firstValue("Content-Type").orElse(""));
+        assertEquals("WEBP", new String(hero.body(), 8, 4, StandardCharsets.US_ASCII));
     }
 
     @Test

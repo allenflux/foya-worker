@@ -2,9 +2,10 @@
 
 const $ = (selector) => document.querySelector(selector);
 const appText = (zh, en) => window.AppLanguage.t(zh, en);
-const state = {config:null, report:null, summary:null, status:null, connected:null, saveState:null, summaryRemaining:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
+const state = {view:'home', config:null, report:null, summary:null, status:null, connected:null, saveState:null, summaryRemaining:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
 const viewNames = {
+  home:['首页','Home'],
   overview:['日统计','Daily report'],
   tasks:['P0 任务','P0 tasks'],
   'task-lookup':['单条任务查询','Task lookup'],
@@ -13,6 +14,10 @@ const viewNames = {
   logs:['记录','Activity']
 };
 let reportAiController = null;
+let overviewOpened = false;
+let reportSequence = 0;
+let mappingsLoaded = false;
+let mappingsLoading = false;
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value) => value == null ? '—' : numberFormat.format(Number(value));
@@ -227,8 +232,8 @@ function yesterday(timezone='Asia/Shanghai') {
 }
 
 function renderViewName() {
-  const view = location.hash.slice(1) || 'overview';
-  const target = Object.hasOwn(viewNames,view) ? view : 'overview';
+  const view = location.hash.slice(1);
+  const target = Object.hasOwn(viewNames,view) ? view : 'home';
   const name = appText(...viewNames[target]);
   $('#breadcrumb-current').textContent = name;
   document.title = `${name} · AIAPI`;
@@ -237,15 +242,24 @@ function renderViewName() {
 
 function setView() {
   const target = renderViewName();
+  state.view = target;
   document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active',el.id === `view-${target}`));
-  document.querySelectorAll('.workspace-nav a').forEach((link) => {
+  document.querySelectorAll('.site-header a[data-view]').forEach((link) => {
     const active = link.dataset.view === target;
     link.classList.toggle('active',active);
     if (active) link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   });
-  if (target === 'logs') refreshStatus().catch(handleError);
+  if (target === 'logs' && state.config) refreshStatus().catch(handleError);
   if (target === 'tasks') window.P0Tasks?.activate();
+  loadModule(target);
+}
+
+function loadModule(view) {
+  if (view === 'overview' && state.config && !overviewOpened) {
+    void loadReport({silent:true});
+  }
+  if (view === 'mappings') void loadMappings();
 }
 
 function handleError(error,context=appText('页面操作','Page action')) {
@@ -499,9 +513,14 @@ function renderSummaryProgress() {
 
 async function loadReport({silent=false}={}) {
   const endDate = $('#end-date').value;
+  const sequence = ++reportSequence;
   if (!endDate) return;
-  try {renderReport(await api(`/api/report?endDate=${encodeURIComponent(endDate)}`));}
-  catch(error) {
+  overviewOpened = true;
+  try {
+    const report = await api(`/api/report?endDate=${encodeURIComponent(endDate)}`);
+    if (sequence === reportSequence) renderReport(report);
+  } catch(error) {
+    if (sequence !== reportSequence) return;
     if (error.status === 409) {
       renderReport(null);
       if (!silent) toast(appText('所选日期还没有完整远程缓存，请点击「刷新统计」。','The selected date is missing cached data. Refresh statistics and try again.'));
@@ -597,7 +616,10 @@ function renderStatus(status) {
   if ((wasRunning || state.startedJob) && !running && status.job && (status.job !== previousJob || state.startedJob)) {
     state.startedJob = false;
     if (status.job.state === 'failed' || status.job.error) toast(displayServerMessage(status.job.error || status.job.message || '执行失败，请查看记录。','Job failed. See activity for details.'),true);
-    else {toast(appText('任务已完成。','Job completed.'));loadReport({silent:true});}
+    else {
+      toast(appText('任务已完成。','Job completed.'));
+      if (overviewOpened) void loadReport({silent:true});
+    }
   }
   if (status.job && (status.job.state === 'failed' || status.job.error)) {
     const job = status.job;
@@ -718,6 +740,23 @@ function renderMappings(mappings) {
   updatePriceCount();
 }
 
+async function loadMappings() {
+  if (mappingsLoaded || mappingsLoading) return;
+  const form = $('#mapping-form');
+  mappingsLoading = true;
+  form.inert = true;
+  form.setAttribute('aria-busy','true');
+  try {
+    renderMappings(await api('/api/mappings'));
+    mappingsLoaded = true;
+  } catch(error) {
+    handleError(error,appText('加载名称映射','Load name mappings'));
+  } finally {
+    mappingsLoading = false;
+    form.inert = !mappingsLoaded;
+    form.removeAttribute('aria-busy');
+  }
+}
 
 for (const [clearName,keyName,hint] of [['clearP0ApiKey','p0ApiKey','#clear-p0-hint'],['clearLlmApiKey','llmApiKey','#clear-llm-hint']]) {
   $('#config-form').elements[clearName].addEventListener('change',(event) => {
@@ -768,7 +807,7 @@ $('#config-form').addEventListener('submit',(event) => {
     setSaveState('saved');
     toast(appText('配置已保存。','Settings saved.'));
     await refreshStatus();
-    await loadReport({silent:true});
+    if (overviewOpened) await loadReport({silent:true});
   },['正在保存','Saving…']);
 });
 $('#mapping-form').addEventListener('submit',(event) => {
@@ -779,7 +818,8 @@ $('#mapping-form').addEventListener('submit',(event) => {
     if (state.config) state.config={...state.config,amountsEnabled:Boolean(result.amountsEnabled)};
     try {const config=await api('/api/config');if(state.config) state.config={...state.config,amountsEnabled:Boolean(config.amountsEnabled)};}
     catch(error) {handleError(error,appText('刷新金额配置','Refresh price settings'));}
-    await loadReport({silent:true});toast(appText('映射配置已保存。','Mappings saved.'));
+    if (overviewOpened) await loadReport({silent:true});
+    toast(appText('映射配置已保存。','Mappings saved.'));
   },['正在保存','Saving…']);
 });
 $('#pull-button').addEventListener('click',() => withButton('#pull-button',async () => {
@@ -953,13 +993,11 @@ window.addEventListener('app-language-change',() => {
   $('#toast').classList.add('hidden');
 });
 
-async function initialize(loadConfig=true) {
+async function initialize() {
   try {
-    if(loadConfig) renderConfig(await api('/api/config'));
-    const results=await Promise.allSettled([api('/api/mappings'),refreshStatus(),loadReport({silent:true})]);
-    if(results[0].status==='fulfilled') renderMappings(results[0].value);
-    else handleError(results[0].reason,appText('加载名称映射','Load name mappings'));
-    if(results[1].status==='rejected') handleError(results[1].reason);
+    renderConfig(await api('/api/config'));
+    loadModule(state.view);
+    await refreshStatus();
   } catch(error){setConnected(false);handleError(error);}
 }
 
