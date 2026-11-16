@@ -261,6 +261,31 @@ textarea.form-control { padding: 13px 14px; line-height: 1.8; font-size: 13px; }
 .tasks-ai-card { margin-bottom: 20px !important; }
 #tasks-ai-title > svg { display: none; }
 #tasks-ai-scope { margin-top: 4px; font-size: 13px; line-height: 1.6; color: var(--app-muted) !important; }
+.ai-timeout-toggle { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-inline-size: 116px; text-align: start; white-space: nowrap; }
+.ai-timeout-toggle svg { width: 13px; height: 13px; color: var(--app-muted); transition: transform .15s ease-out; }
+.ai-timeout-toggle[aria-expanded="true"] { background: var(--app-blue-soft); color: var(--app-blue-ink); }
+.ai-timeout-toggle[aria-expanded="true"] svg { color: var(--app-blue-ink); transform: rotate(180deg); }
+.ai-timeout-menu {
+  --bs-dropdown-min-width: min(11rem, calc(100vw - 2rem));
+  --bs-dropdown-padding-y: 5px;
+  --bs-dropdown-font-size: 14px;
+  --bs-dropdown-bg: var(--app-surface);
+  --bs-dropdown-border-color: var(--app-line);
+  --bs-dropdown-border-radius: 10px;
+  --bs-dropdown-link-color: var(--app-ink);
+  --bs-dropdown-link-hover-color: var(--app-ink);
+  --bs-dropdown-link-hover-bg: var(--app-soft);
+  --bs-dropdown-link-active-color: var(--app-blue-ink);
+  --bs-dropdown-link-active-bg: var(--app-blue-soft);
+  max-inline-size: calc(100vw - 2rem);
+  padding-inline: 5px;
+  box-shadow: 0 9px 24px rgb(15 38 70 / 12%), 0 1px 4px rgb(15 38 70 / 6%);
+}
+.ai-timeout-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; padding: 6px 9px; border-radius: 6px; }
+.ai-timeout-option[aria-checked="true"] { background: var(--app-blue-soft); color: var(--app-blue-ink); font-weight: 650; }
+.ai-timeout-option svg { width: 14px; height: 14px; visibility: hidden; }
+.ai-timeout-option[aria-checked="true"] svg { visibility: visible; }
+.ai-timeout-option:focus-visible { outline: 2px solid var(--app-focus); outline-offset: -2px; }
 .tasks-ai-output { padding: 14px 16px !important; border: 0 !important; border-radius: var(--app-radius); background: var(--app-soft); color: var(--app-ink); white-space: pre-wrap; line-height: 1.75; overflow-wrap: anywhere; font-size: 14px; }
 .tasks-list-card .card-header { padding-bottom: 16px !important; }
 #tasks-result-count { margin-left: 5px !important; font-size: 11px; }
@@ -366,7 +391,8 @@ textarea.form-control { padding: 13px 14px; line-height: 1.8; font-size: 13px; }
   #tasks-stats > .col:first-child { width: 100%; }
   .tasks-ai-card .card-body > .d-flex { align-items: flex-start !important; }
   .tasks-ai-card .card-body > .d-flex > .d-flex { width: 100%; margin-top: 10px; }
-  .tasks-ai-card .form-select { flex: 1; }
+  .ai-timeout-picker { flex: 1 1 auto; min-width: 0; }
+  .ai-timeout-toggle { width: 100%; min-inline-size: 0; }
   #tasks-ai-scope { margin-top: 5px; }
   .workspace-footer { padding-top: 22px; font-size: 11px; }
 }
@@ -382,7 +408,8 @@ textarea.form-control { padding: 13px 14px; line-height: 1.8; font-size: 13px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .view.active { animation: view-enter .18s ease-out; }
-  .btn:not(:disabled, .disabled):active, .tasks-stat:active, .lookup-mode label:active input:not(:disabled) + span {
+  .ai-timeout-menu.show { animation: ai-timeout-enter .14s ease-out; }
+  .btn:not(:disabled, .disabled):active, .tasks-stat:active, .lookup-mode label:active input:not(:disabled) + span, .ai-timeout-option:active {
     transform: translateY(1px) scale(.98);
     transition-duration: .075s;
   }
@@ -390,9 +417,13 @@ textarea.form-control { padding: 13px 14px; line-height: 1.8; font-size: 13px; }
     from { opacity: .88; transform: translateY(4px); }
     to { opacity: 1; transform: none; }
   }
+  @keyframes ai-timeout-enter {
+    from { opacity: .68; }
+    to { opacity: 1; }
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
-  .home-unit, .home-unit-arrow, .workspace-back, .app-language button { transform: none !important; }
+  .home-unit, .home-unit-arrow, .workspace-back, .app-language button, .ai-timeout-toggle svg { transform: none !important; }
   .spinning { animation: none; }
 }

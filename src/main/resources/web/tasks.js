@@ -9,6 +9,7 @@ window.P0Tasks = (() => {
   const locale = () => window.AppLanguage.locale();
   const english = () => locale() === 'en';
   const codes = ['0','1','2','3','-1'];
+  const aiTimeoutOptions = new Set([30,60,120,180,300]);
   const lookupLanguages = {
     'zh-CN': {
       title:'单条任务查询', identifier:'标识类型', taskId:'任务 ID',
@@ -42,6 +43,7 @@ window.P0Tasks = (() => {
   let failureBreakdown = null;
   let failureError = null;
   let aiController = null;
+  let aiTimeoutSeconds = 120;
   let listSequence = 0;
   let statsSequence = 0;
   let aiSequence = 0;
@@ -183,7 +185,6 @@ window.P0Tasks = (() => {
     aiController?.abort();
     aiController = null;
     el('tasks-ai-cancel').classList.add('hidden');
-    el('tasks-ai-timeout').disabled = false;
     if (showMessage) {
       aiDisplay = {state:'cancelled'};
       renderAi();
@@ -205,6 +206,13 @@ window.P0Tasks = (() => {
       ? t('刷新失败分类','Refresh failures') : t('查看失败分类','Show failures');
     el('tasks-ai-generate').disabled = !statistics || statistics.complete === false || statsBusy || !!aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured;
     el('tasks-ai-generate').textContent = aiController ? t('正在生成','Generating…') : t('重新生成','Regenerate');
+    const timeoutToggle = el('tasks-ai-timeout-toggle');
+    if (aiController && timeoutToggle.getAttribute('aria-expanded') === 'true') {
+      const focused = el('tasks-ai-timeout-menu').contains(document.activeElement) || document.activeElement === timeoutToggle;
+      bootstrap.Dropdown.getOrCreateInstance(timeoutToggle).hide();
+      if (focused) el('tasks-ai-cancel').focus({preventScroll:true});
+    }
+    timeoutToggle.disabled = Boolean(aiController);
   }
 
   function renderStats() {
@@ -698,8 +706,7 @@ window.P0Tasks = (() => {
     const captured = statistics;
     const sequence = ++aiSequence;
     aiController = new AbortController();
-    const timeoutSeconds = Number(el('tasks-ai-timeout').value);
-    el('tasks-ai-timeout').disabled = true;
+    const timeoutSeconds = aiTimeoutSeconds;
     el('tasks-ai-cancel').classList.remove('hidden');
     aiDisplay = {progress:{elapsedSeconds:0,remainingSeconds:timeoutSeconds}};
     renderAiScope();
@@ -724,7 +731,9 @@ window.P0Tasks = (() => {
       renderAi();
     } finally {
       if (sequence === aiSequence) {
-        aiController = null;el('tasks-ai-timeout').disabled=false;el('tasks-ai-cancel').classList.add('hidden');updateActions();
+        aiController = null;
+        el('tasks-ai-cancel').classList.add('hidden');
+        updateActions();
       }
     }
   }
@@ -746,11 +755,10 @@ window.P0Tasks = (() => {
       renderAi();
     }
     if (!aiController) {
-      const timeout = String(config.llmTimeoutSeconds || 120);
-      if (![...el('tasks-ai-timeout').options].some((option) => option.value === timeout)) {
-        el('tasks-ai-timeout').add(new Option(timeoutOptionLabel(timeout),timeout));
-      }
-      el('tasks-ai-timeout').value = timeout;
+      const timeout = Number(config.llmTimeoutSeconds);
+      aiTimeoutSeconds = Number.isInteger(timeout) && timeout >= 5 && timeout <= 300 ? timeout : 120;
+      aiTimeoutOptions.add(aiTimeoutSeconds);
+      renderAiTimeoutMenu();
     }
     renderStats();
     if (location.hash === '#tasks' && !applied) activate();
@@ -768,9 +776,36 @@ window.P0Tasks = (() => {
     return t(`最多 ${seconds} 秒`,`Up to ${seconds}s`);
   }
 
+  function renderAiTimeoutSelection() {
+    el('tasks-ai-timeout-value').textContent = timeoutOptionLabel(aiTimeoutSeconds);
+    for (const option of el('tasks-ai-timeout-menu').children) {
+      option.setAttribute('aria-checked',String(Number(option.dataset.aiTimeout) === aiTimeoutSeconds));
+    }
+  }
+
+  function renderAiTimeoutMenu() {
+    el('tasks-ai-timeout-menu').innerHTML = [...aiTimeoutOptions].sort((a,b) => a-b).map((seconds) =>
+      `<button type="button" class="dropdown-item ai-timeout-option" role="menuitemradio" tabindex="-1" data-ai-timeout="${seconds}"><span>${esc(timeoutOptionLabel(seconds))}</span><svg aria-hidden="true"><use href="#i-check"/></svg></button>`
+    ).join('');
+    renderAiTimeoutSelection();
+  }
+
+  el('tasks-ai-timeout-toggle').addEventListener('shown.bs.dropdown',() => {
+    el('tasks-ai-timeout-menu').querySelector('[aria-checked="true"]')?.focus({preventScroll:true});
+  });
+  el('tasks-ai-timeout-menu').addEventListener('click',(event) => {
+    const option = event.target.closest('[data-ai-timeout]');
+    if (!option || aiController) return;
+    aiTimeoutSeconds = Number(option.dataset.aiTimeout);
+    renderAiTimeoutSelection();
+    const toggle = el('tasks-ai-timeout-toggle');
+    bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
+    toggle.focus({preventScroll:true});
+  });
+
   function renderLanguage() {
     renderLookupLanguage();
-    for (const option of el('tasks-ai-timeout').options) option.textContent = timeoutOptionLabel(option.value);
+    renderAiTimeoutMenu();
     renderListState();
     renderStats();
     renderFailureBreakdown();
