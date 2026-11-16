@@ -14,7 +14,6 @@
   <script src="/tasks.js" defer></script>
 </head>
 <body class="app-shell" data-view="home">
-<div class="home-sky" aria-hidden="true"></div>
 <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 7V3m-2 0h4M1 12v5m22-5v5M8 12h.01M16 12h.01M9 16h6"/></symbol>
@@ -42,10 +41,6 @@
     <span class="workspace-current" id="breadcrumb-current" aria-current="page"></span>
     <div class="header-actions">
       <div class="service-state"><span class="connection-dot" id="connection-dot"></span><span id="connection-text" data-en="Connecting…">正在连接服务</span></div>
-      <button class="home-motion-toggle" id="home-motion-toggle" type="button" aria-pressed="true" aria-label="背景动效" data-en-aria-label="Background motion" title="背景动效" data-en-title="Background motion">
-        <svg class="home-motion-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14m6-14v14"/></svg>
-        <svg class="home-motion-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z"/></svg>
-      </button>
       <div class="app-language" role="group" aria-label="界面语言" data-en-aria-label="Language">
         <button id="app-lang-zh" type="button" lang="zh-CN" aria-pressed="true">中文</button>
         <button id="app-lang-en" type="button" lang="en" aria-pressed="false">English</button>
