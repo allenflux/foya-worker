@@ -139,45 +139,32 @@
   </section>
 </section>
 <section id="view-task-lookup" class="view" aria-labelledby="task-lookup-title">
-  <header class="page-heading">
-    <h1 id="task-lookup-title" class="h5 mb-0">P0 单条任务查询</h1>
-    <p class="page-description">按 UUID 或 Task ID 直接查询，无需选择时间范围。</p>
+  <header class="lookup-heading">
+    <h1 id="task-lookup-title">P0 单条任务查询</h1>
   </header>
-  <section class="card mb-3" aria-label="单条任务查询条件">
-    <div class="card-body p-3">
-      <form id="task-lookup-form" class="row g-3 align-items-end">
-        <div class="col-12 col-sm-auto">
-          <label class="form-label" for="task-lookup-kind">查询方式</label>
-          <select class="form-select form-select-sm" id="task-lookup-kind">
-            <option value="uuid">UUID</option>
-            <option value="task_id">Task ID</option>
-          </select>
-        </div>
-        <div class="col-12 col-sm">
-          <label class="form-label" for="task-lookup-value" id="task-lookup-label">UUID</label>
-          <input class="form-control form-control-sm font-monospace" id="task-lookup-value" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-        </div>
-        <div class="col-12 col-sm col-md-3">
-          <label class="form-label" for="task-lookup-key">P0 API Key</label>
-          <input class="form-control form-control-sm" id="task-lookup-key" type="password" autocomplete="new-password" placeholder="留空使用已配置的密钥">
-        </div>
-        <div class="col-12 col-sm-auto d-grid">
-          <button type="submit" class="btn btn-primary btn-sm" id="task-lookup-submit">查询任务</button>
-        </div>
-      </form>
+  <form id="task-lookup-form" class="lookup-panel" aria-label="单条任务查询条件">
+    <div class="lookup-field">
+      <label for="task-lookup-kind">查询方式</label>
+      <select class="form-select lookup-control" id="task-lookup-kind">
+        <option value="task_id">Task ID</option>
+        <option value="uuid">UUID</option>
+      </select>
     </div>
-  </section>
-  <p class="small text-body-secondary hidden" id="task-lookup-message" role="status"></p>
-  <section class="card hidden" id="task-lookup-result" aria-labelledby="task-lookup-result-title">
-    <div class="card-header bg-white p-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-      <h2 class="h6 mb-0" id="task-lookup-result-title">任务详情</h2>
-      <button class="btn btn-outline-secondary btn-sm" type="button" id="task-lookup-copy">复制 JSON</button>
+    <div class="lookup-field">
+      <label for="task-lookup-value" id="task-lookup-label">Task ID</label>
+      <input class="form-control font-monospace lookup-control" id="task-lookup-value" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" required>
     </div>
-    <div class="card-body p-3">
-      <dl class="row small tasks-detail-grid" id="task-lookup-meta"></dl>
-      <h3 class="h6 mb-2">完整数据</h3>
-      <pre class="bg-body-tertiary border rounded p-3 small mb-0 overflow-auto tasks-detail-json" id="task-lookup-json"></pre>
+    <button type="submit" class="lookup-button" id="task-lookup-submit">查询任务</button>
+  </form>
+  <p class="lookup-message hidden" id="task-lookup-message" role="status"></p>
+  <section class="lookup-panel hidden" id="task-lookup-result" aria-labelledby="task-lookup-result-title">
+    <h2 id="task-lookup-result-title">任务详情</h2>
+    <dl id="task-lookup-meta"></dl>
+    <div class="lookup-json-heading">
+      <h3 id="task-lookup-json-title">完整数据</h3>
+      <button class="lookup-button" type="button" id="task-lookup-copy">复制 JSON</button>
     </div>
+    <pre id="task-lookup-json" tabindex="0" aria-labelledby="task-lookup-json-title"></pre>
   </section>
 </section>
 <div class="modal fade" id="tasks-detail-dialog" tabindex="-1" aria-labelledby="tasks-detail-title" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="tasks-detail-title">任务详情</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div><div class="modal-body"><dl class="row small tasks-detail-grid" id="tasks-detail-meta"></dl><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><h3 class="h6 mb-0">完整数据</h3><button class="btn btn-outline-secondary btn-sm" type="button" id="tasks-copy-detail">复制 JSON</button></div><pre class="bg-body-tertiary border rounded p-3 small mb-0 tasks-detail-json" id="tasks-detail-json"></pre></div><div class="modal-footer"><span class="small text-body-secondary me-auto">字段以 P0 接口返回为准。</span><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">关闭</button></div></div></div></div>

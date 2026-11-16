@@ -393,9 +393,11 @@ window.P0Tasks = (() => {
     bootstrap.Modal.getOrCreateInstance(el('tasks-detail-dialog')).show();
   }
 
-  function lookupMessage(message) {
-    el('task-lookup-message').textContent = message;
-    el('task-lookup-message').classList.toggle('hidden',!message);
+  function lookupMessage(message,state='') {
+    const output = el('task-lookup-message');
+    output.textContent = message;
+    output.dataset.state = state;
+    output.classList.toggle('hidden',!message);
   }
 
   function clearLookup() {
@@ -419,12 +421,11 @@ window.P0Tasks = (() => {
     }
     const controller = lookupController = new AbortController();
     const button = el('task-lookup-submit');
-    const key = el('task-lookup-key');
     const notFound = '未找到匹配的任务，请核对输入的标识。';
     const payload = {[kind.value]:value};
-    if (key.value.trim()) payload.apiKey = key.value.trim();
     clearLookup();
-    kind.disabled = input.disabled = key.disabled = button.disabled = true;
+    kind.disabled = input.disabled = button.disabled = true;
+    button.textContent = '查询中…';
     lookupMessage('正在查询 P0…');
     try {
       const {task} = await api('/api/tasks/lookup',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
@@ -438,10 +439,13 @@ window.P0Tasks = (() => {
       el('task-lookup-result').classList.remove('hidden');
       lookupMessage('找到 1 条任务。');
     } catch (error) {
-      if (!controller.signal.aborted) lookupMessage(error.status === 404 ? notFound : errorText(error,'P0 单条任务查询'));
+      if (controller.signal.aborted) return;
+      if (error.status === 404) lookupMessage(notFound);
+      else lookupMessage(errorText(error,'P0 单条任务查询'),'error');
     } finally {
       lookupController = null;
-      kind.disabled = input.disabled = key.disabled = button.disabled = false;
+      kind.disabled = input.disabled = button.disabled = false;
+      button.textContent = '查询任务';
     }
   }
 
@@ -570,7 +574,6 @@ window.P0Tasks = (() => {
     clearLookup();
   });
   el('task-lookup-value').addEventListener('input',clearLookup);
-  el('task-lookup-key').addEventListener('input',clearLookup);
   el('task-lookup-copy').addEventListener('click',() => copyDetail('task-lookup'));
   el('tasks-export').addEventListener('click',exportPage);
   el('tasks-ai-generate').addEventListener('click',generateAi);

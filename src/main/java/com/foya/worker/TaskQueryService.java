@@ -90,38 +90,51 @@ public final class TaskQueryService {
             throw new IllegalArgumentException("请输入有效的 UUID 或 Task ID，最多 256 字符且不能含控制字符。");
         if (byUuid) id = id.strip();
 
-        String key = "";
-        if (input.has("apiKey")) {
-            key = input.path("apiKey").textValue();
-            if (key == null || key.length() > 512 || key.chars().anyMatch(c -> c < 32 || c > 126))
-                throw new IllegalArgumentException("P0 API Key 格式无效。");
-            key = key.strip();
-        }
-        if (key.isEmpty()) key = P0Client.resolveApiKey(config);
-        if (key.isBlank()) throw new IllegalArgumentException("请输入 P0 API Key。");
-
+        String key = P0Client.resolveApiKey(config);
         URI source = URI.create(config.p0Endpoint);
+        String[] identityFields = byUuid ? new String[]{"uuid"} : new String[]{"task_id", "taskId"};
+        JsonNode task = key.isBlank() && !byUuid ? lookupAnonymousTaskId(source, id, deadline)
+                : lookupPublicTask(source, field, id, key, identityFields, deadline);
+        String found = text(task, identityFields);
+        if (!(byUuid ? id.equalsIgnoreCase(found) : id.equals(found)))
+            throw new IOException("P0 返回的任务与查询标识不一致。");
+        return Map.of("task", taskView(config, task, secrets(config, key)));
+    }
+
+    private JsonNode lookupAnonymousTaskId(URI source, String id, long deadline) throws Exception {
+        URI uri = URI.create(source + "?page=1&page_size=1&task_id=" + encode(id));
+        HttpResponse<String> response = get(uri, "", deadline, true);
+        checkLookupStatus(response.statusCode(), "");
+        Page page = decode(readResponse(response), 1);
+        if (page.rows().isEmpty() && !Boolean.TRUE.equals(page.hasMore()) && (page.total() == null || page.total() == 0))
+            throw new TaskNotFoundException();
+        if (page.rows().size() != 1) throw new IOException("P0 精确查询返回的任务数量无效。");
+        return page.rows().getFirst();
+    }
+
+    private JsonNode lookupPublicTask(URI source, String field, String id, String key, String[] identityFields,
+                                      long deadline) throws Exception {
         URI origin = "p0-function.inaiai.com".equalsIgnoreCase(source.getHost())
                 ? URI.create("https://p0-api.inaiai.com") : source;
-        String path = byUuid ? "/api/public/task/uuid" : "/api/public/task";
+        String path = "uuid".equals(field) ? "/api/public/task/uuid" : "/api/public/task";
         HttpResponse<String> response = get(origin.resolve(path + "?" + field + "=" + encode(id)), key, deadline, false);
-        int status = response.statusCode();
-        if (status == 404) throw new TaskNotFoundException();
-        if (status == 401 || status == 403)
-            throw new IOException("P0 精确查询失败：HTTP " + status + "，请检查 API Key 是否有权查询该任务。");
-        if (status < 200 || status >= 300) throw new IOException("P0 精确查询失败：HTTP " + status + "，请稍后重试。");
-
-        String[] identityFields = byUuid ? new String[]{"uuid"} : new String[]{"task_id", "taskId"};
+        checkLookupStatus(response.statusCode(), key);
         JsonNode task = readResponse(response);
         if (task != null && task.isObject() && text(task, identityFields).isBlank()) {
             if (task.has("data")) task = task.path("data");
             if (task.isObject() && text(task, identityFields).isBlank() && task.has("task")) task = task.path("task");
         }
         if (task == null || !task.isObject()) throw new IOException("P0 精确查询返回的任务格式无效。");
-        String found = text(task, identityFields);
-        if (!(byUuid ? id.equalsIgnoreCase(found) : id.equals(found)))
-            throw new IOException("P0 返回的任务与查询标识不一致。");
-        return Map.of("task", taskView(config, task, secrets(config, key)));
+        return task;
+    }
+
+    private static void checkLookupStatus(int status, String key) throws IOException {
+        if (status == 404) throw new TaskNotFoundException();
+        if (status == 401 || status == 403) {
+            String reason = key.isBlank() ? "当前 P0 接口拒绝匿名查询" : "当前 P0 数据源无权查询该任务";
+            throw new IOException(reason + "（HTTP " + status + "）。");
+        }
+        if (status < 200 || status >= 300) throw new IOException("P0 精确查询失败：HTTP " + status + "，请稍后重试。");
     }
 
     private static ObjectNode taskView(AppConfig config, JsonNode raw, List<String> secrets) {

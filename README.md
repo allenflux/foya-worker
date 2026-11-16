@@ -28,7 +28,7 @@ docker compose up -d --build
 
 主导航「P0 任务」复用已保存的 P0 数据源、密钥、时区及名称映射，按创建时间、当前状态查询原始任务，无需先生成日报缓存。日期区间只限定任务创建时间，不表示该时段曾经处于某状态的历史数量，也不包括区间前创建但当前仍为处理中（状态 0）的任务。每次查询和点击状态卡均重新获取统计，避免复用过期状态计数。
 
-- 主导航「单条查询」按 UUID 或 Task ID 调用 P0 公共查询接口，无需选择日期或加载任务列表。使用后台已配置的 P0 API Key，也可以输入有权查询该任务的密钥，仅用于当次请求。
+- 主导航「单条查询」只需填写 Task ID 或 UUID，无需输入密钥或选择日期。后台未配置密钥时，Task ID 由列表接口按标识精确查询，只请求一条记录。UUID 直接使用上游单条接口，是否允许匿名查询取决于上游配置。
 - 支持今天、昨天、近 24 小时、近 7 天，以及自定义起止时间；结束时间包含所选秒的全部微秒。单次区间最长 31 天。快捷时间在每次查询时重新计算；手动修改起止时间后保持固定范围。
 - 「更多条件」支持原始工作流类型 `task_type`、渠道 `hash_key`、任务 ID `task_id` 精确筛选，三个条件同时作用于任务列表和统计。列表关键词仅定位当前页，页面会明确标注。
 - 统计卡片覆盖整个匹配区间，显示全部任务以及 `-1 / 0 / 1 / 2 / 3` 各状态数量与占比，点击卡片筛选列表。按当前业务口径展示：`-1 = 失败`（红色）、`0 = 处理中`、`1 = 旧状态`（历史处理中，现已少用）、`2 = 成功`（绿色）、`3 = 加水印中`。状态 1 仍保留独立筛选与计数，不并入状态 0，AI 简报沿用同一口径。
@@ -41,7 +41,7 @@ docker compose up -d --build
 
 诊断只读取 `-1 / 0 / 1 / 3` 状态，最多每状态 500 条、合计 2,000 条，并明确完整或样本覆盖范围；任务创建年龄与未更新时间不等于处理耗时。自动简报为诊断读取预留至多 10 秒，仍共用用户设置的总时限；诊断读取失败时保留状态汇总解读，取消会同时中断诊断和模型请求。
 
-本地接口为 `GET /api/tasks`、`GET /api/tasks/statistics`、`GET /api/tasks/diagnostics`，使用 `start_time`、`end_time`，列表另带 `status`、`page`、`page_size`，精确筛选参数三个接口通用。诊断接口加 `status=-1` 时只读取失败记录。单条查询使用 `POST /api/tasks/lookup`，JSON 传 `uuid` 或 `task_id`，可选传 `apiKey`。AI 通过 `POST /api/ai/start`、`GET /api/ai/status?id=…`、`POST /api/ai/cancel` 启动、查询与取消。
+本地接口为 `GET /api/tasks`、`GET /api/tasks/statistics`、`GET /api/tasks/diagnostics`，使用 `start_time`、`end_time`，列表另带 `status`、`page`、`page_size`，精确筛选参数三个接口通用。诊断接口加 `status=-1` 时只读取失败记录。单条查询使用 `POST /api/tasks/lookup`，JSON 传 `uuid` 或 `task_id`。AI 通过 `POST /api/ai/start`、`GET /api/ai/status?id=…`、`POST /api/ai/cancel` 启动、查询与取消。
 
 ## 远程每日缓存
 

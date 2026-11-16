@@ -23,12 +23,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TaskLookupTest {
     private static final String KEY = "P0_TEST_LOOKUP_KEY";
-    private static final String REQUEST_KEY = "P0_TEST_REQUEST_KEY";
     private static final String UUID = "77777777-0303-4040-9090-111111111111";
     private static final String LOOKUP = "/api/tasks/lookup";
 
     private record Reply(int status, String body) {}
-    private record Request(String method, String target, String key, String accept) {}
+    private record Request(String method, String target, String key, String accept, String canary) {}
 
     @TempDir Path directory;
     private final List<Request> requests = new CopyOnWriteArrayList<>();
@@ -42,7 +41,8 @@ class TaskLookupTest {
         upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         upstream.createContext("/", exchange -> {
             requests.add(new Request(exchange.getRequestMethod(), exchange.getRequestURI().toASCIIString(),
-                    exchange.getRequestHeaders().getFirst("apikey"), exchange.getRequestHeaders().getFirst("Accept")));
+                    exchange.getRequestHeaders().getFirst("apikey"), exchange.getRequestHeaders().getFirst("Accept"),
+                    exchange.getRequestHeaders().getFirst("canary")));
             Reply response = reply;
             byte[] body = response.body().getBytes(StandardCharsets.UTF_8);
             try {
@@ -71,15 +71,14 @@ class TaskLookupTest {
     @Test void dispatchesOneExactPublicRequestPerIdentifierAndSanitizesTaskDetails() throws Exception {
         reply = new Reply(200, """
                 {"code": 0, "data": {"task": {"uuid": "%s", "task_id": "task a+b?c&d", "status": 2,
-                   "prompt": "sample prompt", "meta": {"api_key": "UPSTREAM_FIELD_SECRET", "note": "%s %s"}}}}
-                """.formatted(UUID, KEY, REQUEST_KEY));
-        HttpResponse<String> byTaskId = lookup(Map.of("task_id", "task a+b?c&d", "apiKey", REQUEST_KEY));
+                   "prompt": "sample prompt", "meta": {"api_key": "UPSTREAM_FIELD_SECRET", "note": "%s"}}}}
+                """.formatted(UUID, KEY));
+        HttpResponse<String> byTaskId = lookup(Map.of("task_id", "task a+b?c&d"));
         JsonNode task = task(byTaskId);
         assertEquals("task a+b?c&d", task.path("task_id").asText());
         assertEquals("sample prompt", task.path("prompt").asText());
         assertFalse(byTaskId.body().contains("UPSTREAM_FIELD_SECRET"));
         assertFalse(byTaskId.body().contains(KEY));
-        assertFalse(byTaskId.body().contains(REQUEST_KEY));
         assertEquals(KEY, worker.configs.snapshot().p0ApiKey);
 
         reply = new Reply(200, """
@@ -89,8 +88,8 @@ class TaskLookupTest {
         assertEquals(UUID, byUuid.path("uuid").asText());
         assertEquals(0, byUuid.path("status").asInt(-1));
         assertEquals(List.of(
-                new Request("GET", "/api/public/task?task_id=task+a%2Bb%3Fc%26d", REQUEST_KEY, "application/json"),
-                new Request("GET", "/api/public/task/uuid?uuid=" + UUID, KEY, "application/json")), requests);
+                new Request("GET", "/api/public/task?task_id=task+a%2Bb%3Fc%26d", KEY, "application/json", null),
+                new Request("GET", "/api/public/task/uuid?uuid=" + UUID, KEY, "application/json", null)), requests);
     }
 
     @Test void rejectsMissingBlankOrAmbiguousIdentifiersBeforeQueryingP0() throws Exception {
@@ -100,21 +99,51 @@ class TaskLookupTest {
         assertTrue(requests.isEmpty());
     }
 
-    @Test void requiresCredentialWhenNoBackgroundKeyIsConfigured() throws Exception {
+    @Test void looksUpAnonymouslyWhenNoBackgroundKeyIsConfigured() throws Exception {
         worker.configs.update(Json.MAPPER.valueToTree(Map.of("clearP0ApiKey", true)));
-        assertLookupError(400, lookup(Map.of("uuid", UUID)));
-        assertTrue(requests.isEmpty());
         reply = new Reply(200, "{\"uuid\":\"" + UUID + "\"}");
-        assertEquals(UUID, task(lookup(Map.of("uuid", UUID, "apiKey", REQUEST_KEY))).path("uuid").asText());
-        assertEquals(REQUEST_KEY, requests.getFirst().key());
+        assertEquals(UUID, task(lookup(Map.of("uuid", UUID))).path("uuid").asText());
+        assertNull(requests.getFirst().key());
         assertTrue(worker.configs.snapshot().p0ApiKey.isBlank());
+
+        reply = new Reply(401, "{\"detail\":\"UPSTREAM_PRIVATE_DETAIL\"}");
+        var rejected = lookup(Map.of("uuid", UUID));
+        assertLookupError(502, rejected);
+        assertTrue(Json.MAPPER.readTree(rejected.body()).path("error").asText().contains("拒绝匿名查询"));
+    }
+
+    @Test void looksUpTaskIdWithOneAnonymousExactPageAndChecksTheReturnedIdentity() throws Exception {
+        worker.configs.update(Json.MAPPER.valueToTree(Map.of("clearP0ApiKey", true)));
+        Map<String, String> input = Map.of("task_id", "task a+b?c&d");
+        Request exactPage = new Request("GET", "/api/tasks/list?page=1&page_size=1&task_id=task+a%2Bb%3Fc%26d",
+                null, "application/json", "true");
+
+        reply = new Reply(200, """
+                {"page":1,"page_size":1,"total_count":1,"tasks":[{"task_id":"task a+b?c&d","status":2}]}
+                """);
+        assertEquals("task a+b?c&d", task(lookup(input)).path("task_id").asText());
+        assertEquals(List.of(exactPage), requests);
+
+        reply = new Reply(200, """
+                {"page":1,"page_size":1,"total_count":0,"tasks":[]}
+                """);
+        assertLookupError(404, lookup(input));
+        assertEquals(List.of(exactPage, exactPage), requests);
+
+        reply = new Reply(200, """
+                {"page":1,"page_size":1,"total_count":1,"tasks":[{"task_id":"other-task","prompt":"UNRELATED_TASK_CONTENT"}]}
+                """);
+        HttpResponse<String> rejected = lookup(input);
+        assertLookupError(502, rejected);
+        assertFalse(rejected.body().contains("UNRELATED_TASK_CONTENT"));
+        assertEquals(List.of(exactPage, exactPage, exactPage), requests);
     }
 
     @Test void distinguishesMissingTaskFromUpstreamPermissionErrorWithoutLeakingDetails() throws Exception {
         reply = new Reply(404, "{\"detail\":\"UPSTREAM_PRIVATE_DETAIL " + KEY + "\"}");
         assertLookupError(404, lookup(Map.of("uuid", UUID)));
-        reply = new Reply(403, "{\"detail\":\"UPSTREAM_PRIVATE_DETAIL " + REQUEST_KEY + "\"}");
-        assertLookupError(502, lookup(Map.of("uuid", UUID, "apiKey", REQUEST_KEY)));
+        reply = new Reply(403, "{\"detail\":\"UPSTREAM_PRIVATE_DETAIL " + KEY + "\"}");
+        assertLookupError(502, lookup(Map.of("uuid", UUID)));
         assertEquals(2, requests.size());
     }
 
@@ -146,6 +175,6 @@ class TaskLookupTest {
         JsonNode details = Json.MAPPER.readTree(response.body()).path("errorDetails");
         assertEquals(expected, details.path("status").asInt());
         assertEquals(LOOKUP, details.path("path").asText());
-        for (String value : List.of(KEY, REQUEST_KEY, UUID, "UPSTREAM_PRIVATE_DETAIL")) assertFalse(response.body().contains(value));
+        for (String value : List.of(KEY, UUID, "UPSTREAM_PRIVATE_DETAIL")) assertFalse(response.body().contains(value));
     }
 }
