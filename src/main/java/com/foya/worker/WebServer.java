@@ -146,7 +146,7 @@ public final class WebServer implements AutoCloseable {
     }
     private static void staticFile(HttpExchange exchange, String path, String method) throws IOException {
         if (!method.equals("GET") && !method.equals("HEAD")) { json(exchange, 405, Map.of("error", "请求方式不允许。")); return; }
-        String resource = switch (path) { case "/", "/index.html" -> "index.html"; case "/app.js" -> "app.js"; case "/tasks.js" -> "tasks.js"; case "/styles.css" -> "styles.css"; default -> null; };
+        String resource = switch (path) { case "/", "/index.html" -> "index.html"; case "/language.js" -> "language.js"; case "/app.js" -> "app.js"; case "/tasks.js" -> "tasks.js"; case "/styles.css" -> "styles.css"; default -> null; };
         if (resource == null) { json(exchange, 404, Map.of("error", "页面不存在。")); return; }
         try (var input = WebServer.class.getResourceAsStream("/web/" + resource)) {
             if (input == null) { json(exchange, 404, Map.of("error", "页面资源未找到。")); return; }

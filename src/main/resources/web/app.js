@@ -1,15 +1,23 @@
 'use strict';
 
 const $ = (selector) => document.querySelector(selector);
-const state = {config:null, report:null, summary:null, status:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
+const appText = (zh, en) => window.AppLanguage.t(zh, en);
+const state = {config:null, report:null, summary:null, status:null, connected:null, saveState:null, summaryRemaining:null, refreshing:false, startedJob:false, persistentError:null, cacheErrorSignature:null, failedJobIds:new Set(), toastTimer:null, busy: new Set()};
 let botSequence = 0;
-const viewNames = {overview:'统计概览',tasks:'P0 任务','task-lookup':'P0 单条任务查询',settings:'机器人配置',mappings:'渠道与工作流',logs:'运行记录'};
+const viewNames = {
+  overview:['日统计','Daily report'],
+  tasks:['P0 任务','P0 tasks'],
+  'task-lookup':['单条任务查询','Task lookup'],
+  settings:['配置','Settings'],
+  mappings:['映射','Mappings'],
+  logs:['记录','Activity']
+};
 let reportAiController = null;
 const numberFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:2});
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value) => value == null ? '—' : numberFormat.format(Number(value));
 const moneyFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits:12});
-const money = (value) => value == null ? '未统计' : moneyFormat.format(Number(value));
+const money = (value) => value == null ? appText('未统计','Unavailable') : moneyFormat.format(Number(value));
 const displayDate = (date) => typeof date === 'string' ? date.slice(5).replace('-', '/') : '—';
 const icon = (name, className='') => `<svg class="${className}"><use href="#i-${name}"/></svg>`;
 const showModal = (selector) => bootstrap.Modal.getOrCreateInstance($(selector)).show();
@@ -26,14 +34,21 @@ function toast(message, error=false) {
 
 function redactDiagnostic(value) {
   let text = String(value ?? '');
+  const hidden = appText('[已隐藏]','[redacted]');
   for (const input of document.querySelectorAll('input[type="password"]')) {
-    if (input.value && input.value.length >= 4) text = text.split(input.value).join('[已隐藏]');
+    if (input.value && input.value.length >= 4) text = text.split(input.value).join(hidden);
   }
-  return text.replace(/\bBearer\s+[^\s,;]+/gi,'Bearer [已隐藏]')
-    .replace(/\b\d{5,}:[A-Za-z0-9_-]{15,}\b/g,'[已隐藏]')
-    .replace(/\b(?:sk|sess|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}\b/gi,'[已隐藏]')
-    .replace(/((?:api[-_]?key|token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?)[^"',;\s&]+/gi,'$1[已隐藏]')
+  return text.replace(/\bBearer\s+[^\s,;]+/gi,`Bearer ${hidden}`)
+    .replace(/\b\d{5,}:[A-Za-z0-9_-]{15,}\b/g,hidden)
+    .replace(/\b(?:sk|sess|ghp|github_pat)[-_][A-Za-z0-9_-]{10,}\b/gi,hidden)
+    .replace(/((?:api[-_]?key|token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?)[^"',;\s&]+/gi,`$1${hidden}`)
     .slice(0,8000);
+}
+
+function displayServerMessage(message,englishFallback) {
+  const text = redactDiagnostic(message);
+  if (!text) return englishFallback;
+  return appText(text,/\p{Script=Han}/u.test(text) ? englishFallback : text);
 }
 
 function diagnosticPath(value) {
@@ -47,7 +62,7 @@ function diagnosticError(message,path,options={},status=null,details=null) {
   return error;
 }
 
-function showPersistentError(error,context='页面操作') {
+function showPersistentError(error,context=appText('页面操作','Page action')) {
   if (error?.persistentShown) return;
   const details = error?.diagnostics && typeof error.diagnostics === 'object' ? error.diagnostics : {};
   const method = String(details.method || 'LOCAL').toUpperCase();
@@ -58,18 +73,30 @@ function showPersistentError(error,context='页面操作') {
     path:diagnosticPath(details.path),
     status:Number.isInteger(details.status) && details.status >= 100 && details.status <= 599 ? details.status : null,
     step:redactDiagnostic(details.step || context),
-    message:redactDiagnostic(details.message || error?.message || '操作失败，请复制错误详情反馈。')
+    message:redactDiagnostic(details.message || error?.message || appText('操作失败，请复制错误详情反馈。','This action failed. Copy the error details to report it.'))
   };
   if (details.requestId) diagnostics.requestId = redactDiagnostic(details.requestId).slice(0,128);
   if (details.jobId) diagnostics.jobId = redactDiagnostic(details.jobId).slice(0,128);
   const signature = JSON.stringify([diagnostics.method,diagnostics.path,diagnostics.status,diagnostics.step,diagnostics.message]);
   if (error && typeof error === 'object') error.persistentShown = true;
-  if (context === '状态刷新' && state.persistentError?.signature === signature) return;
+  if (state.persistentError?.signature === signature) return;
   const text = JSON.stringify(diagnostics,null,2);
-  state.persistentError = {signature,text};
-  $('#error-message').textContent = `${diagnostics.step}：${diagnostics.message}`;
+  state.persistentError = {signature,text,diagnostics,translatedMessage:error?.translatedMessage};
+  renderErrorMessage();
   $('#error-details').textContent = text;
   $('#error-panel').classList.remove('hidden');
+}
+
+function renderErrorMessage() {
+  const details = state.persistentError?.diagnostics;
+  if (!details) return;
+  const fallback = details.status ? `The server returned HTTP ${details.status}. See details below.` : 'This action failed. See details below.';
+  const translations = state.persistentError.translatedMessage;
+  const message = translations ? appText(...translations) : displayServerMessage(details.message,fallback);
+  $('#error-message').textContent = appText(
+    `${details.step}：${message}`,
+    message
+  );
 }
 
 async function copyText(text) {
@@ -84,7 +111,7 @@ async function copyText(text) {
   document.body.append(input);
   try {
     input.focus();input.select();input.setSelectionRange(0,input.value.length);
-    if (!document.execCommand('copy')) throw new Error('无法自动复制，请展开详情后手动复制。');
+    if (!document.execCommand('copy')) throw new Error(appText('无法自动复制，请展开详情后手动复制。','Could not copy automatically. Open the details and copy the text manually.'));
   } finally {input.remove();previousFocus?.focus?.();}
 }
 
@@ -93,7 +120,7 @@ async function api(path, options={}) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   let timedOut = false;
-  if (signal?.aborted) throw new DOMException('已取消请求。','AbortError');
+  if (signal?.aborted) throw new DOMException(appText('已取消请求。','Request canceled.'),'AbortError');
   signal?.addEventListener('abort',abort,{once:true});
   const timer = setTimeout(() => {timedOut=true;controller.abort();},timeoutMs);
   const headers = {'X-Requested-With':'foya-admin',...(options.body ? {'Content-Type':'application/json'}:{}),...options.headers};
@@ -102,19 +129,22 @@ async function api(path, options={}) {
     try {response = await fetch(path,{...requestOptions,headers,signal:controller.signal,cache:'no-store'});}
     catch(error) {
       if (controller.signal.aborted) throw error;
-      throw diagnosticError('无法连接后台服务，请检查服务是否运行。',path,options);
+      throw diagnosticError(appText('无法连接后台服务，请检查服务是否运行。','Could not connect to the server. Check that the service is running.'),path,options);
     }
     let data;
     try {data = await response.json();}
     catch(error) {
       if (controller.signal.aborted) throw error;
-      throw diagnosticError('后台返回格式异常，请复制错误详情反馈。',path,options,response.status);
+      throw diagnosticError(appText('后台返回格式异常，请复制错误详情反馈。','The server returned an unexpected response. Copy the error details to report it.'),path,options,response.status);
     }
-    if (!response.ok) throw diagnosticError(data.error || data.message || `请求失败（${response.status}）`,path,options,response.status,data.errorDetails);
+    if (!response.ok) throw diagnosticError(data.error || data.message || appText(`请求失败（${response.status}）`,`Request failed (HTTP ${response.status}).`),path,options,response.status,data.errorDetails);
     return data;
   } catch(error) {
-    if (timedOut) throw diagnosticError(`请求超过 ${Math.round(timeoutMs/1000)} 秒，已停止等待，请稍后重试。`,path,options);
-    if (signal?.aborted) throw new DOMException('已取消请求。','AbortError');
+    if (timedOut) {
+      const seconds = Math.round(timeoutMs / 1000);
+      throw diagnosticError(appText(`请求超过 ${seconds} 秒，已停止等待，请稍后重试。`,`The request timed out after ${seconds}s. Try again.`),path,options);
+    }
+    if (signal?.aborted) throw new DOMException(appText('已取消请求。','Request canceled.'),'AbortError');
     throw error;
   } finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
@@ -124,7 +154,8 @@ async function runAiTask(input,{timeoutSeconds=120,signal,onProgress}={}) {
   const started = performance.now();
   let id;
   let complete = false;
-  const aborted = () => {if(signal?.aborted) throw new DOMException('AI 总结已取消。','AbortError');};
+  const timeoutMessage = () => appText(`AI 总结超过 ${budget} 秒，已中止生成。`,`AI generation timed out after ${budget}s.`);
+  const aborted = () => {if(signal?.aborted) throw new DOMException(appText('AI 总结已取消。','AI summary canceled.'),'AbortError');};
   const progress = () => {
     const elapsedSeconds = Math.floor((performance.now()-started)/1000);
     onProgress?.({elapsedSeconds,remainingSeconds:Math.max(0,budget-elapsedSeconds),timeoutSeconds:budget});
@@ -135,18 +166,18 @@ async function runAiTask(input,{timeoutSeconds=120,signal,onProgress}={}) {
     // Always read the start response so an immediately cancelled request can still cancel its server job.
     const job = await api('/api/ai/start',{method:'POST',body:JSON.stringify({...input,timeoutSeconds:budget}),timeoutMs:10000});
     id = job.id;
-    if (!id) throw new Error('AI 任务未返回编号，请重试。');
+    if (!id) throw new Error(appText('AI 任务未返回编号，请重试。','No AI job ID was returned. Try again.'));
     while (true) {
       aborted();progress();
       const remaining = budget*1000-(performance.now()-started);
-      if (remaining <= 0) return {aiStatus:'failed',aiMessage:`AI 总结超过 ${budget} 秒，已中止生成。`};
+      if (remaining <= 0) return {aiStatus:'failed',aiMessage:timeoutMessage()};
       const current = await api(`/api/ai/status?id=${encodeURIComponent(id)}`,{signal,timeoutMs:Math.min(10000,Math.max(1,remaining))});
-      if (current.state === 'complete') {complete=true;return current.result || {aiStatus:'failed',aiMessage:'AI 未返回总结。'};}
-      if (current.state === 'cancelled') throw new DOMException('AI 总结已取消。','AbortError');
-      if (current.state === 'timed_out') {complete=true;return current.result || {aiStatus:'failed',aiMessage:`AI 总结超过 ${budget} 秒，已中止生成。`};}
-      if (current.state !== 'running') {complete=true;return current.result || {aiStatus:'failed',aiMessage:'AI 生成失败，请稍后重试。'};}
+      if (current.state === 'complete') {complete=true;return current.result || {aiStatus:'failed',aiMessage:appText('AI 未返回总结。','No AI summary was returned.')};}
+      if (current.state === 'cancelled') throw new DOMException(appText('AI 总结已取消。','AI summary canceled.'),'AbortError');
+      if (current.state === 'timed_out') {complete=true;return current.result || {aiStatus:'failed',aiMessage:timeoutMessage()};}
+      if (current.state !== 'running') {complete=true;return current.result || {aiStatus:'failed',aiMessage:appText('AI 生成失败，请稍后重试。','AI generation failed. Try again later.')};}
       await new Promise((resolve,reject) => {
-        const stop = () => {clearTimeout(pause);reject(new DOMException('AI 总结已取消。','AbortError'));};
+        const stop = () => {clearTimeout(pause);reject(new DOMException(appText('AI 总结已取消。','AI summary canceled.'),'AbortError'));};
         const pause = setTimeout(() => {signal?.removeEventListener('abort',stop);resolve();},Math.min(800,remaining));
         signal?.addEventListener('abort',stop,{once:true});
       });
@@ -160,11 +191,31 @@ async function runAiTask(input,{timeoutSeconds=120,signal,onProgress}={}) {
 async function withButton(selector, fn, loadingText) {
   const button = $(selector);
   if (state.busy.has(selector)) return;
-  const original = button.innerHTML;
-  const context = button.textContent.trim() || '页面操作';
-  state.busy.add(selector);button.disabled = true;
-  if (loadingText) button.innerHTML = `${icon('refresh','spinning')}${loadingText}`;
-  try {return await fn();} catch(error) {handleError(error,context);} finally {state.busy.delete(selector);button.innerHTML = original;button.disabled=false;updateActions();}
+  const original = document.createElement('span');
+  const loading = document.createElement('span');
+  const renderLoading = () => {loading.textContent = appText(...loadingText);};
+  state.busy.add(selector);
+  button.disabled = true;
+  if (loadingText) {
+    original.hidden = true;
+    original.append(...button.childNodes);
+    button.append(original);
+    button.insertAdjacentHTML('beforeend',icon('refresh','spinning'));
+    button.append(loading);
+    renderLoading();
+    window.addEventListener('app-language-change',renderLoading);
+  }
+  try {return await fn();}
+  catch(error) {handleError(error,(loadingText ? original : button).textContent.trim());}
+  finally {
+    state.busy.delete(selector);
+    if (loadingText) {
+      window.removeEventListener('app-language-change',renderLoading);
+      button.replaceChildren(...original.childNodes);
+    }
+    button.disabled = false;
+    updateActions();
+  }
 }
 
 function yesterday(timezone='Asia/Shanghai') {
@@ -175,20 +226,34 @@ function yesterday(timezone='Asia/Shanghai') {
   return date.toISOString().slice(0,10);
 }
 
-function setView() {
+function renderViewName() {
   const view = location.hash.slice(1) || 'overview';
-  const target = viewNames[view] ? view : 'overview';
+  const target = Object.hasOwn(viewNames,view) ? view : 'overview';
+  const name = appText(...viewNames[target]);
+  $('#breadcrumb-current').textContent = name;
+  document.title = `${name} · AIAPI`;
+  return target;
+}
+
+function setView() {
+  const target = renderViewName();
   document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active',el.id === `view-${target}`));
   document.querySelectorAll('.nav a').forEach((el) => el.classList.toggle('active',el.dataset.view === target));
-  $('#breadcrumb-current').textContent = viewNames[target];
   if (target === 'logs') refreshStatus().catch(handleError);
   if (target === 'tasks') window.P0Tasks?.activate();
 }
 
-function handleError(error,context='页面操作') {showPersistentError(error,context);toast(redactDiagnostic(error.message),true);}
+function handleError(error,context=appText('页面操作','Page action')) {
+  showPersistentError(error,context);
+  const message = error?.translatedMessage ? appText(...error.translatedMessage)
+    : displayServerMessage(error?.message || '操作失败，请查看详情。','This action failed. See error details.');
+  toast(message,true);
+}
 function setConnected(ok) {
+  state.connected = ok;
   $('#connection-dot').className = `connection-dot ${ok ? 'ok' : 'error'}`;
-  $('#connection-text').textContent = ok ? '后台服务已连接' : '后台连接中断';
+  $('#connection-text').textContent = ok ? appText('后台服务已连接','Connected')
+    : appText('后台连接中断','Disconnected');
 }
 
 function readyBots() {
@@ -207,7 +272,35 @@ function readBot(card) {
 function updateBotCount() {
   const count = document.querySelectorAll('[data-bot-card]').length;
   $('#bots-empty').classList.toggle('hidden',count > 0);
-  $('#telegram-config-state').textContent = `${count} 个`;
+  $('#telegram-config-state').textContent = appText(`${count} 个`,`${count} ${count === 1 ? 'bot' : 'bots'}`);
+}
+
+const botCopy = {
+  name:['名称','Name'],
+  namePlaceholder:['日报机器人','Report bot'],
+  configured:['已配置 · 留空保留','Configured · leave blank to keep'],
+  tokenPlaceholder:['从 @BotFather 获取','Get a token from @BotFather'],
+  enabled:['启用','Enabled'],
+  discovery:['自动登记群组和私聊','Auto-register groups and direct chats'],
+  discoveryHelp:['加群自动登记，私聊先发 /start；/stop 取消。','Groups register automatically. Send /start or /stop in a direct chat.'],
+  test:['测试连接','Test connection'],
+  advanced:['高级','Advanced'],
+  remove:['删除','Remove'],
+  chat:['手动 Chat ID（可选）','Manual chat ID (optional)'],
+  chatPlaceholder:['-100… 或 @channel','-100… or @channel'],
+  thread:['话题 ID（可选）','Topic ID (optional)'],
+  time:['发送时间（留空用默认）','Send time (blank uses default)'],
+  clear:['清除已保存 Token','Clear saved token']
+};
+const botText = (key) => appText(...botCopy[key]);
+const botLabel = (key) => `<span data-bot-copy="${key}">${escapeHtml(botText(key))}</span>`;
+const botPlaceholder = (key) => `data-bot-placeholder="${key}" placeholder="${escapeHtml(botText(key))}"`;
+
+function renderBotLanguage() {
+  for (const element of document.querySelectorAll('[data-bot-copy]')) element.textContent = botText(element.dataset.botCopy);
+  for (const element of document.querySelectorAll('[data-bot-placeholder]')) element.placeholder = botText(element.dataset.botPlaceholder);
+  updateBotCount();
+  updateSubscriptionCounts();
 }
 
 function appendBot(bot={}) {
@@ -218,16 +311,16 @@ function appendBot(bot={}) {
   card.dataset.botCard = '';
   if (bot.id) card.dataset.botId = bot.id;
   card.innerHTML = `<div class="row g-2 align-items-end">
-    <div class="col-md-3"><label class="form-label small mb-1" for="bot-name-${uid}">名称</label><input class="form-control form-control-sm" id="bot-name-${uid}" data-field="name" type="text" required maxlength="100" placeholder="日报机器人" value="${escapeHtml(bot.name || `机器人 ${uid}`)}"></div>
-    <div class="col-md-7"><label class="form-label small mb-1" for="bot-token-${uid}">Bot Token</label><input class="form-control form-control-sm" id="bot-token-${uid}" data-field="token" type="password" autocomplete="new-password" placeholder="${configured ? '已配置 · 留空保留' : '从 @BotFather 获取'}"></div>
-    <div class="col-md-2"><label class="form-check form-switch small mb-1"><input class="form-check-input" data-field="enabled" type="checkbox" role="switch" ${bot.enabled !== false ? 'checked' : ''}><span class="form-check-label">启用</span></label></div>
-    <div class="col-12 col-md-7"><label class="form-check small mt-1 mb-0"><input class="form-check-input" data-field="autoDiscover" type="checkbox" ${bot.autoDiscover !== false ? 'checked' : ''}><span>自动登记群组和私聊</span></label><div class="form-text">加群自动登记，私聊先发 /start；/stop 取消。<span data-bot-subscriptions></span></div></div>
-    <div class="col-12 col-md-5 d-flex justify-content-md-end flex-wrap gap-2"><button type="button" class="btn btn-outline-primary btn-sm" data-bot-action="test" id="bot-test-${uid}">测试连接</button><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#bot-advanced-${uid}" aria-expanded="false" aria-controls="bot-advanced-${uid}">高级</button><button type="button" class="btn btn-outline-danger btn-sm" data-bot-action="remove">删除</button></div>
+    <div class="col-md-3"><label class="form-label small mb-1" for="bot-name-${uid}">${botLabel('name')}</label><input class="form-control form-control-sm" id="bot-name-${uid}" data-field="name" type="text" required maxlength="100" ${botPlaceholder('namePlaceholder')} value="${escapeHtml(bot.name || appText(`机器人 ${uid}`,`Bot ${uid}`))}"></div>
+    <div class="col-md-7"><label class="form-label small mb-1" for="bot-token-${uid}">Bot Token</label><input class="form-control form-control-sm" id="bot-token-${uid}" data-field="token" type="password" autocomplete="new-password" ${botPlaceholder(configured ? 'configured' : 'tokenPlaceholder')}></div>
+    <div class="col-md-2"><label class="form-check form-switch small mb-1"><input class="form-check-input" data-field="enabled" type="checkbox" role="switch" ${bot.enabled !== false ? 'checked' : ''}>${botLabel('enabled')}</label></div>
+    <div class="col-12 col-md-7"><label class="form-check small mt-1 mb-0"><input class="form-check-input" data-field="autoDiscover" type="checkbox" ${bot.autoDiscover !== false ? 'checked' : ''}>${botLabel('discovery')}</label><div class="form-text">${botLabel('discoveryHelp')}<span data-bot-subscriptions></span></div></div>
+    <div class="col-12 col-md-5 d-flex justify-content-md-end flex-wrap gap-2"><button type="button" class="btn btn-outline-primary btn-sm" data-bot-action="test" id="bot-test-${uid}">${botLabel('test')}</button><button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#bot-advanced-${uid}" aria-expanded="false" aria-controls="bot-advanced-${uid}">${botLabel('advanced')}</button><button type="button" class="btn btn-outline-danger btn-sm" data-bot-action="remove">${botLabel('remove')}</button></div>
   </div><div class="collapse" id="bot-advanced-${uid}"><div class="row g-2 mt-1">
-    <div class="col-md-5"><label class="form-label small mb-1" for="bot-chat-${uid}">手动 Chat ID（可选）</label><input class="form-control form-control-sm" id="bot-chat-${uid}" data-field="chatId" type="text" placeholder="-100… 或 @channel" value="${escapeHtml(bot.chatId || '')}"></div>
-    <div class="col-md-3"><label class="form-label small mb-1" for="bot-thread-${uid}">话题 ID（可选）</label><input class="form-control form-control-sm" id="bot-thread-${uid}" data-field="threadId" type="text" inputmode="numeric" value="${escapeHtml(bot.threadId || '')}"></div>
-    <div class="col-md-4"><label class="form-label small mb-1" for="bot-time-${uid}">发送时间（留空用默认）</label><input class="form-control form-control-sm" id="bot-time-${uid}" data-field="sendTime" type="time" value="${escapeHtml(bot.sendTime || '')}"></div>
-  </div><label class="form-check small mt-2 mb-0 ${configured ? '' : 'hidden'}"><input class="form-check-input" type="checkbox" data-field="clearToken"><span>清除已保存 Token</span></label></div>`;
+    <div class="col-md-5"><label class="form-label small mb-1" for="bot-chat-${uid}">${botLabel('chat')}</label><input class="form-control form-control-sm" id="bot-chat-${uid}" data-field="chatId" type="text" ${botPlaceholder('chatPlaceholder')} value="${escapeHtml(bot.chatId || '')}"></div>
+    <div class="col-md-3"><label class="form-label small mb-1" for="bot-thread-${uid}">${botLabel('thread')}</label><input class="form-control form-control-sm" id="bot-thread-${uid}" data-field="threadId" type="text" inputmode="numeric" value="${escapeHtml(bot.threadId || '')}"></div>
+    <div class="col-md-4"><label class="form-label small mb-1" for="bot-time-${uid}">${botLabel('time')}</label><input class="form-control form-control-sm" id="bot-time-${uid}" data-field="sendTime" type="time" value="${escapeHtml(bot.sendTime || '')}"></div>
+  </div><label class="form-check small mt-2 mb-0 ${configured ? '' : 'hidden'}"><input class="form-check-input" type="checkbox" data-field="clearToken">${botLabel('clear')}</label></div>`;
   $('#telegram-bots').append(card);
   updateBotCount();
   updateSubscriptionCounts();
@@ -243,12 +336,41 @@ function updateSubscriptionCounts() {
   const subscriptions = state.status?.subscriptions;
   for (const card of document.querySelectorAll('[data-bot-card]')) {
     const count = (subscriptions || []).filter((subscription) => subscription.botId === card.dataset.botId).length;
-    card.querySelector('[data-bot-subscriptions]').textContent = subscriptions && card.dataset.botId ? ` 已登记 ${count} 个接收会话。` : '';
+    card.querySelector('[data-bot-subscriptions]').textContent = subscriptions && card.dataset.botId
+      ? appText(` 已登记 ${count} 个接收会话。`,` ${count} registered ${count === 1 ? 'chat' : 'chats'}.`) : '';
   }
   const targets = readyBots();
   const targetIds = new Set(targets.map((bot) => bot.id));
   const count = (subscriptions || []).filter((subscription) => targetIds.has(subscription.botId)).length;
-  $('#telegram-target').textContent = targets.length ? `启用 ${targets.length} 个机器人${subscriptions ? ` · 已登记 ${count} 个会话` : ''}` : '暂无可发送的启用机器人';
+  $('#telegram-target').textContent = targets.length ? appText(
+    `启用 ${targets.length} 个机器人${subscriptions ? ` · 已登记 ${count} 个会话` : ''}`,
+    `${targets.length} enabled ${targets.length === 1 ? 'bot' : 'bots'}${subscriptions ? ` · ${count} registered ${count === 1 ? 'chat' : 'chats'}` : ''}`
+  ) : appText('暂无可发送的启用机器人','No enabled bots can send reports');
+}
+
+function renderConfigLabels(config) {
+  const form = $('#config-form');
+  const configured = appText('已配置 · 留空保持不变','Configured · leave blank to keep');
+  $('#p0-key-hint').textContent = config.p0ApiKeyFromEnvironment
+    ? appText('当前凭据由环境变量提供，环境变量始终优先；清除操作仅删除后台保存的密钥。','The environment variable takes precedence. Clearing removes only the saved key.')
+    : appText('密钥不会回显；留空保留当前值。','Leave blank to keep the saved key.');
+  $('#llm-key-hint').textContent = config.llmApiKeyFromEnvironment
+    ? appText('当前模型密钥由环境变量提供，环境变量始终优先；清除操作仅删除后台保存的密钥。','The environment variable takes precedence. Clearing removes only the saved key.')
+    : appText('密钥不会回显；留空保留当前值，不包含在导出配置中。','Leave blank to keep the saved key. Exports omit the key.');
+  form.elements.llmApiKey.placeholder = config.llmApiKeyConfigured ? configured : appText('输入模型服务的 API Key','Enter the model API key');
+  form.elements.p0ApiKey.placeholder = config.p0ApiKeyConfigured ? configured : appText('输入 API Key','Enter API key');
+  $('#p0-config-state').textContent = config.p0ApiKeyConfigured ? appText('已配置','Configured') : appText('未设置密钥','No key set');
+  const days = config.reportDays || 10;
+  const reportDays = state.report?.days?.length || days;
+  $('#days-badge').textContent = appText(`${reportDays} 天`,`${reportDays} ${reportDays === 1 ? 'day' : 'days'}`);
+  $('#metric-total-note').textContent = appText(`近 ${days} 天 · 成功任务`,`Successful tasks · last ${days} ${days === 1 ? 'day' : 'days'}`);
+  $('#metric-schedule').innerHTML = `${config.scheduleEnabled ? escapeHtml(config.sendTime || '09:00') : appText('未启用','Disabled')}<span class="schedule-dot ${config.scheduleEnabled ? 'enabled' : ''}"></span>`;
+  const timezone = config.timezone || 'Asia/Shanghai';
+  $('#metric-schedule-note').textContent = config.scheduleEnabled ? appText(`每日推送 · ${timezone}`,`Daily delivery · ${timezone}`)
+    : appText('配置机器人后开启每日推送','Configure a bot to enable daily delivery');
+  $('#schedule-zone-hint').textContent = appText(`按 ${timezone} 每日生成并发送；AI 不可用仍发统计。`,`Reports are delivered daily in ${timezone}, including when AI is unavailable.`);
+  const allTargets = $('#send-target').options[0];
+  if (allTargets) allTargets.textContent = appText('所有启用的机器人','All enabled bots');
 }
 
 function renderConfig(config) {
@@ -266,30 +388,19 @@ function renderConfig(config) {
   form.elements.p0ApiKey.disabled = false;
   $('#clear-p0-wrap').classList.toggle('hidden',!config.p0ApiKeyConfigured);
   $('#clear-p0-hint').classList.add('hidden');
-  $('#p0-key-hint').textContent = config.p0ApiKeyFromEnvironment ? '当前凭据由环境变量提供，环境变量始终优先；清除操作仅删除后台保存的密钥。' : '密钥不会回显；留空保留当前值。';
   form.elements.llmApiKey.value = '';form.elements.llmApiKey.disabled = false;form.elements.clearLlmApiKey.checked = false;
   $('#clear-llm-wrap').classList.toggle('hidden',!config.llmApiKeyConfigured);
   $('#clear-llm-hint').classList.add('hidden');
-  $('#llm-key-hint').textContent = config.llmApiKeyFromEnvironment ? '当前模型密钥由环境变量提供，环境变量始终优先；清除操作仅删除后台保存的密钥。' : '密钥不会回显；留空保留当前值，不包含在导出配置中。';
-  form.elements.llmApiKey.placeholder = config.llmApiKeyConfigured ? '已配置 · 留空保持不变' : '输入模型服务的 API Key';
-  form.elements.p0ApiKey.placeholder = config.p0ApiKeyConfigured ? '已配置 · 留空保持不变' : '输入 API Key';
-  for(const [selector,configured] of [['#p0-config-state',config.p0ApiKeyConfigured]]) {
-    $(selector).textContent = configured ? '已配置' : (selector === '#p0-config-state' ? '未设置密钥' : '未配置');$(selector).className = `badge fw-normal ${configured ? 'text-bg-success' : 'text-bg-light border'}`;
-  }
+  $('#p0-config-state').className = `badge fw-normal ${config.p0ApiKeyConfigured ? 'text-bg-success' : 'text-bg-light border'}`;
   $('#setup-banner').classList.toggle('hidden',Boolean(config.p0ApiKeyConfigured || state.report));
-  const days = config.reportDays || 10;
-  $('#days-badge').textContent = `${days} 天`;
-  $('#metric-total-note').textContent = `近 ${days} 天 · 成功任务`;
-  $('#metric-schedule').innerHTML = `${config.scheduleEnabled ? escapeHtml(config.sendTime || '09:00') : '未启用'}<span class="schedule-dot ${config.scheduleEnabled ? 'enabled' : ''}"></span>`;
-  $('#metric-schedule-note').textContent = config.scheduleEnabled ? `每日推送 · ${config.timezone || 'Asia/Shanghai'}` : '配置机器人后开启每日推送';
   renderBots(config.telegramBots || []);
   const targets = readyBots();
   updateSubscriptionCounts();
   const selected = $('#send-target').value;
-  $('#send-target').innerHTML = '<option value="">所有启用的机器人</option>' + targets.map((bot) => `<option value="${escapeHtml(bot.id)}">${escapeHtml(bot.name || bot.chatId)}</option>`).join('');
+  $('#send-target').innerHTML = '<option value=""></option>' + targets.map((bot) => `<option value="${escapeHtml(bot.id)}">${escapeHtml(bot.name || bot.chatId)}</option>`).join('');
   $('#send-target').value = targets.some((bot) => bot.id === selected) ? selected : '';
   $('#send-target').classList.toggle('hidden',targets.length < 2);
-  $('#schedule-zone-hint').textContent = `按 ${config.timezone || 'Asia/Shanghai'} 每日生成并发送；AI 不可用仍发统计。`;
+  renderConfigLabels(config);
   $('#footer-timezone').textContent = config.timezone || 'Asia/Shanghai';
   const maxDate = yesterday(config.timezone || 'Asia/Shanghai');
   $('#end-date').max = maxDate;
@@ -312,6 +423,10 @@ function renderReport(report) {
   if (state.report?.endDate !== report?.endDate || state.report?.text !== report?.text) reportAiController?.abort();
   if (!report || state.summary?.endDate !== report.endDate || state.summary?.rawText !== report.text) state.summary = null;
   state.report = report;
+  renderReportView(report);
+}
+
+function renderReportView(report) {
   const hasData = Boolean(report);
   $('#setup-banner').classList.toggle('hidden',hasData || Boolean(state.config?.p0ApiKeyConfigured));
   $('#daily-empty').classList.toggle('hidden',hasData);
@@ -320,22 +435,33 @@ function renderReport(report) {
   const amountsPaused = report?.amountsEnabled !== true;
   $('#metric-count').textContent = number(report?.latestCount);
   $('#metric-fee').textContent = money(amountsPaused ? null : report?.latestFee);
-  $('#metric-fee-note').textContent = amountsPaused ? '金额暂未统计' : (report.latestFeeComplete === false || report.latestFee == null ? '部分任务未配置单价' : '按成功单数 × 单价汇总');
+  $('#metric-fee-note').textContent = amountsPaused ? appText('金额暂未统计','Fee tracking is off')
+    : report.latestFeeComplete === false || report.latestFee == null ? appText('部分任务未配置单价','Some tasks have no unit price')
+    : appText('按成功单数 × 单价汇总','Successful tasks × unit price');
   const byCount = amountsPaused || report?.channelsBy === 'count';
-  $('#channel-sort-note').textContent = `最新统计日 · 按${byCount ? '单数' : '金额'}降序`;
-  $('#channel-share-heading').textContent = `${byCount ? '单数' : '金额'}占比`;
+  $('#channel-sort-note').textContent = byCount ? appText('最新统计日 · 按单数降序','Latest day · by task count')
+    : appText('最新统计日 · 按金额降序','Latest day · by fee');
+  $('#channel-share-heading').textContent = byCount ? appText('单数占比','Task share') : appText('金额占比','Fee share');
   const incompleteFees = Boolean(report && (report.feeComplete === false || Number(report.missingFeeCount) > 0));
   $('#fee-notice').classList.toggle('hidden',!amountsPaused && !incompleteFees);
-  $('#fee-notice').textContent = amountsPaused ? '金额暂未统计，渠道按单数排名' : (incompleteFees ? `${Number(report.missingFeeCount) > 0 ? `${number(report.missingFeeCount)} 单未配置单价` : '部分任务未配置单价'}，金额未统计，单数统计正常。${byCount ? '渠道按单数排名。' : ''}` : '');
+  const missingPrices = number(report?.missingFeeCount);
+  $('#fee-notice').textContent = amountsPaused ? appText('金额暂未统计，渠道按单数排名','Fee tracking is off. Channels are ranked by task count.')
+    : incompleteFees ? appText(
+      `${Number(report.missingFeeCount) > 0 ? `${missingPrices} 单未配置单价` : '部分任务未配置单价'}，金额未统计，单数统计正常。${byCount ? '渠道按单数排名。' : ''}`,
+      `${Number(report.missingFeeCount) > 0 ? `Tasks without a unit price: ${missingPrices}.` : 'Some tasks have no unit price.'} Fee totals are unavailable.${byCount ? ' Channels are ranked by task count.' : ''}`
+    ) : '';
   $('#metric-total').textContent = number(report?.totalCount);
-  $('#metric-count-note').textContent = report ? `${displayDate(report.endDate)} · 成功任务` : '等待拉取数据';
+  $('#metric-count-note').textContent = report ? appText(`${displayDate(report.endDate)} · 成功任务`,`${displayDate(report.endDate)} · Successful tasks`)
+    : appText('等待拉取数据','Waiting for data');
   $('#data-period').textContent = report ? `${displayDate(report.startDate)} — ${displayDate(report.endDate)}` : '—';
-  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${money(amountsPaused ? null : day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">远程缓存</span></td></tr>`).join('');
+  $('#daily-rows').innerHTML = (report?.days || []).map((day) => `<tr><td>${escapeHtml(displayDate(day.date))}<span class="small text-body-secondary ms-2">${escapeHtml(day.date?.slice(0,4))}</span></td><td class="text-end">${number(day.count)}</td><td class="text-end">${money(amountsPaused ? null : day.fee)}</td><td class="text-end"><span class="badge text-bg-success fw-normal">${appText('远程缓存','Cached')}</span></td></tr>`).join('');
   $('#channel-rows').innerHTML = (report?.channels || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end">${money(amountsPaused ? null : row.fee)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   $('#workflow-rows').innerHTML = (report?.workflows || []).slice(0,10).map((row,index) => `<tr><td title="${escapeHtml(row.name)}"><span class="badge ${index<3?'text-bg-primary':'text-bg-light border'} me-2 fw-normal">${index+1}</span>${escapeHtml(row.name)}</td><td class="text-end">${number(row.count)}</td><td class="text-end text-body-secondary">${Number(row.share || 0).toFixed(1)}%</td></tr>`).join('');
   renderAiPreview();
-  $('#preview-clock').textContent = report ? new Intl.DateTimeFormat('zh-CN',{timeZone:state.config?.timezone || 'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()) : '预览';
-  if (report?.days) $('#days-badge').textContent = `${report.days.length} 天`;
+  $('#preview-clock').textContent = report ? new Intl.DateTimeFormat(window.AppLanguage.locale(),{timeZone:state.config?.timezone || 'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date())
+    : appText('预览','Preview');
+  const days = report?.days?.length || state.config?.reportDays || 10;
+  $('#days-badge').textContent = appText(`${days} 天`,`${days} ${days === 1 ? 'day' : 'days'}`);
   updateActions();
 }
 
@@ -344,32 +470,108 @@ function renderAiPreview() {
   const summary = state.summary;
   const status = summary?.aiStatus || (state.config?.llmEnabled ? 'ready' : 'disabled');
   const labels = {
-    ready:'AI 已启用 · 发送时自动生成，可先预览',
-    pending:'正在生成 AI 总结 · 原始统计已保留',
-    ok:'AI 总结已生成 · 已加入报表预览',
-    failed:'AI 总结暂不可用 · 将照常发送原始日报',
-    cancelled:'AI 总结已取消 · 原始统计已保留',
-    disabled:'AI 总结未启用 · 原始日报可正常发送'
+    ready:['AI 已启用 · 发送时自动生成，可先预览','AI summaries are enabled. Generate a preview or wait for delivery.'],
+    pending:['正在生成 AI 总结','Generating AI summary'],
+    ok:['AI 总结已加入报表预览','AI summary added to preview'],
+    failed:['AI 总结暂不可用 · 将照常发送原始日报','AI summary unavailable. The original report can still be sent.'],
+    cancelled:['AI 总结已取消','AI summary canceled'],
+    disabled:['AI 总结未启用','AI summary is off']
   };
-  $('#summary-status').textContent = labels[status] || labels.failed;
+  $('#summary-status').textContent = appText(...(labels[status] || labels.failed));
   $('#summary-notice').className = `alert ${status === 'ok' ? 'alert-success' : status === 'failed' ? 'alert-warning' : status === 'pending' ? 'alert-primary' : 'alert-light'} border-0 border-bottom rounded-0 m-0 py-2 px-3 small`;
-  $('#summary-notice').title = redactDiagnostic(summary?.aiMessage || '');
+  $('#summary-notice').title = summary?.aiMessage ? displayServerMessage(summary.aiMessage,'See the AI summary status.') : '';
   $('#summary-dot').className = `tiny-dot me-1 ${status === 'ok' ? 'teal' : status === 'pending' ? 'blue' : ''}`;
-  $('#report-preview').textContent = summary?.text || state.report?.text || '等待生成报表\n\n完成数据源配置并刷新统计后，\n这里会显示实际发送内容。\n\n每日统计 · 渠道 TOP10 · 工作流 TOP10';
+  const reportText = summary?.text || state.report?.text;
+  $('#report-preview').textContent = reportText || appText('刷新统计后，这里会显示实际发送的报表。','Refresh statistics to preview the report that will be sent.');
+  $('#report-preview').lang = reportText ? 'zh-CN' : window.AppLanguage.locale();
+  renderSummaryProgress();
+}
+
+function renderSummaryProgress() {
+  const remaining = state.summaryRemaining;
+  $('#summary-progress').textContent = remaining == null ? '' : appText(`剩余 ${remaining} 秒`,`${remaining}s remaining`);
 }
 
 async function loadReport({silent=false}={}) {
   const endDate = $('#end-date').value;
   if (!endDate) return;
   try {renderReport(await api(`/api/report?endDate=${encodeURIComponent(endDate)}`));}
-  catch(error) {if (error.status === 409) {renderReport(null);if(!silent) toast('所选日期还没有完整远程缓存，请点击「刷新统计」。');} else {showPersistentError(error,'读取报表');if(!silent) toast(redactDiagnostic(error.message),true);}}
+  catch(error) {
+    if (error.status === 409) {
+      renderReport(null);
+      if (!silent) toast(appText('所选日期还没有完整远程缓存，请点击「刷新统计」。','The selected date is missing cached data. Refresh statistics and try again.'));
+    } else {
+      showPersistentError(error,appText('读取报表','Load report'));
+      if (!silent) toast(displayServerMessage(error.message,'Could not load the report. See error details.'),true);
+    }
+  }
 }
 
 function formatTime(time) {
   if (!time) return '—';
   const date = new Date(time);
   if (Number.isNaN(date.getTime())) return String(time);
-  return new Intl.DateTimeFormat('zh-CN',{timeZone:state.config?.timezone || 'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(date);
+  return new Intl.DateTimeFormat(window.AppLanguage.locale(),{timeZone:state.config?.timezone || 'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(date);
+}
+
+function currentJobLabel(status) {
+  if (!status.running) return status.job?.state === 'failed' ? appText('执行失败','Failed') : appText('空闲','Idle');
+  if (['send','发送报表'].includes(status.job?.kind)) return appText('正在发送','Sending report');
+  if (status.job?.kind === '定时报表') return appText('正在执行定时报表','Running scheduled report');
+  return appText('正在拉取','Refreshing statistics');
+}
+
+function englishJobMessage(job, fallback) {
+  const progress = job?.progress;
+  if (progress?.date && progress.completedHours != null && progress.totalHours != null)
+    return `${progress.date} · ${progress.completedHours}/${progress.totalHours} hours complete · ${progress.requests} requests`;
+  if (progress?.date) return `Checking cache for ${progress.date}`;
+  if (job?.message?.startsWith('正在生成 AI')) return 'Generating AI summary';
+  if (job?.message?.startsWith('正在发送：')) return `Sending to ${job.message.slice('正在发送：'.length)}`;
+  return fallback;
+}
+
+function logMessage(message) {
+  if (window.AppLanguage.locale() !== 'en') return message;
+  const labels = {
+    '拉取统计任务开始':'Statistics refresh started',
+    '发送报表任务开始':'Report delivery started',
+    '定时报表任务开始':'Scheduled report started',
+    '任务已完成':'Job completed',
+    '任务失败':'Job failed'
+  };
+  if (Object.hasOwn(labels,message)) return labels[message];
+  const cached = /^统计缓存已就绪：(\d{4}-\d{2}-\d{2}) 至 (\d{4}-\d{2}-\d{2})$/.exec(message);
+  return cached ? `Statistics cached for ${cached[1]} to ${cached[2]}` : message;
+}
+
+function renderStatusView(status) {
+  const running = Boolean(status.running);
+  $('#job-banner').classList.toggle('hidden',!running);
+  const currentJob = currentJobLabel(status);
+  $('#job-message').textContent = appText(status.job?.message || '正在处理，请稍候…',englishJobMessage(status.job,currentJob));
+  $('#current-job').textContent = currentJob;
+  const cacheDays = status.cacheDays || [];
+  const cacheError = status.cacheError;
+  $('#cache-count').textContent = cacheError ? appText('读取失败','Unavailable')
+    : appText(`${cacheDays.length} 天`,`${cacheDays.length} ${cacheDays.length === 1 ? 'day' : 'days'}`);
+  $('#cache-count').classList.toggle('text-danger',Boolean(cacheError));
+  $('#last-sent').textContent = status.lastSentDate || appText('尚未发送','No reports sent');
+  $('#next-run').textContent = status.nextRun ? formatTime(status.nextRun) : state.config?.scheduleEnabled
+    ? appText('等待下次计划','Waiting for the next run') : appText('未启用','Disabled');
+  $('#cache-dates').classList.toggle('text-danger',Boolean(cacheError));
+  if (cacheError) $('#cache-dates').textContent = appText('远程缓存目录读取失败，请查看错误详情。','Could not read cache dates. See error details.');
+  else $('#cache-dates').innerHTML = cacheDays.length
+    ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('')
+    : `<span class="small text-body-secondary">${appText('暂无远程缓存','No cached dates')}</span>`;
+  const logs = status.logs || [];
+  $('#logs-empty').classList.toggle('hidden',logs.length > 0);
+  $('#log-rows').innerHTML = [...logs].sort((a,b) => String(b.time || '').localeCompare(String(a.time || ''))).map((log) => {
+    const level = String(log.level || 'info').toLowerCase();
+    const type = level.includes('error') || level === 'failed' ? 'error' : level === 'success' ? 'success' : level === 'warn' ? 'warn' : '';
+    const label = type === 'error' ? appText('失败','Error') : type === 'success' ? appText('完成','Done') : type === 'warn' ? appText('提示','Warning') : appText('信息','Info');
+    return `<tr><td class="text-nowrap text-body-secondary">${escapeHtml(formatTime(log.time))}</td><td><span class="badge fw-normal ${type === 'error' ? 'text-bg-danger' : type === 'success' ? 'text-bg-success' : type === 'warn' ? 'text-bg-warning' : 'text-bg-light border'}">${label}</span></td><td class="text-break">${escapeHtml(logMessage(log.message))}</td></tr>`;
+  }).join('');
 }
 
 function renderStatus(status) {
@@ -377,41 +579,20 @@ function renderStatus(status) {
   const previousJob = state.status?.job;
   state.status = status;
   updateSubscriptionCounts();
+  renderStatusView(status);
   const running = Boolean(status.running);
-  $('#job-banner').classList.toggle('hidden',!running);
-  $('#job-message').textContent = status.job?.message || '正在处理，请稍候…';
-  $('#current-job').textContent = running ? (['send','发送报表'].includes(status.job?.kind) ? '正在发送' : (status.job?.kind === '定时报表' ? '正在执行定时报表' : '正在拉取')) : (status.job?.state === 'failed' ? '执行失败' : '空闲');
-  const cacheDays = status.cacheDays || [];
   const cacheError = status.cacheError ? redactDiagnostic(status.cacheError) : '';
-  $('#cache-count').textContent = cacheError ? '读取失败' : `${cacheDays.length} 天`;
-  $('#cache-count').classList.toggle('text-danger',Boolean(cacheError));
-  $('#last-sent').textContent = status.lastSentDate || '尚未发送';
-  $('#next-run').textContent = status.nextRun ? formatTime(status.nextRun) : (state.config?.scheduleEnabled ? '等待下次计划' : '未启用');
-  $('#cache-dates').classList.toggle('text-danger',Boolean(cacheError));
-  if (cacheError) {
-    $('#cache-dates').textContent = '远程缓存目录读取失败，请查看错误详情。';
-    if (state.cacheErrorSignature !== cacheError) {
-      state.cacheErrorSignature = cacheError;
-      const error = diagnosticError(cacheError,'/api/status',{method:'GET'});
-      error.diagnostics.step = '读取远程缓存';
-      showPersistentError(error,'读取远程缓存');
-    }
-  } else {
-    state.cacheErrorSignature = null;
-    $('#cache-dates').innerHTML = cacheDays.length ? [...cacheDays].sort().reverse().map((date) => `<span class="badge text-bg-light border fw-normal">${escapeHtml(date)}</span>`).join('') : '<span class="small text-body-secondary">暂无远程缓存</span>';
-  }
-  const logs = status.logs || [];
-  $('#logs-empty').classList.toggle('hidden',logs.length > 0);
-  $('#log-rows').innerHTML = [...logs].sort((a,b) => String(b.time || '').localeCompare(String(a.time || ''))).map((log) => {
-    const level = String(log.level || 'info').toLowerCase();
-    const type = level.includes('error') || level === 'failed' ? 'error' : level === 'success' ? 'success' : level === 'warn' ? 'warn' : '';
-    const label = type === 'error' ? '失败' : type === 'success' ? '完成' : type === 'warn' ? '提示' : '信息';
-    return `<tr><td class="text-nowrap text-body-secondary">${escapeHtml(formatTime(log.time))}</td><td><span class="badge fw-normal ${type === 'error' ? 'text-bg-danger' : type === 'success' ? 'text-bg-success' : type === 'warn' ? 'text-bg-warning' : 'text-bg-light border'}">${label}</span></td><td class="text-break">${escapeHtml(log.message)}</td></tr>`;
-  }).join('');
+  if (cacheError && state.cacheErrorSignature !== cacheError) {
+    state.cacheErrorSignature = cacheError;
+    const error = diagnosticError(cacheError,'/api/status',{method:'GET'});
+    const context = appText('读取远程缓存','Load cache dates');
+    error.diagnostics.step = context;
+    showPersistentError(error,context);
+  } else if (!cacheError) state.cacheErrorSignature = null;
   if ((wasRunning || state.startedJob) && !running && status.job && (status.job !== previousJob || state.startedJob)) {
     state.startedJob = false;
-    if (status.job.state === 'failed' || status.job.error) toast(status.job.error || status.job.message || '执行失败，请查看记录。',true);
-    else {toast(status.job.message || '任务已完成。');loadReport({silent:true});}
+    if (status.job.state === 'failed' || status.job.error) toast(displayServerMessage(status.job.error || status.job.message || '执行失败，请查看记录。','Job failed. See activity for details.'),true);
+    else {toast(appText('任务已完成。','Job completed.'));loadReport({silent:true});}
   }
   if (status.job && (status.job.state === 'failed' || status.job.error)) {
     const job = status.job;
@@ -419,9 +600,9 @@ function renderStatus(status) {
     if (!state.failedJobIds.has(key)) {
       state.failedJobIds.add(key);
       if (state.failedJobIds.size > 100) state.failedJobIds.delete(state.failedJobIds.values().next().value);
-      const error = new Error(job.error || job.message || '任务执行失败。');
+      const error = new Error(job.error || job.message || appText('任务执行失败。','Job failed.'));
       error.diagnostics = {method:'JOB',path:'/api/status',time:job.finishedAt,step:job.kind,message:error.message,...job.errorDetails};
-      showPersistentError(error,job.kind || '后台任务');
+      showPersistentError(error,job.kind || appText('后台任务','Background job'));
     }
   }
   updateActions();
@@ -430,7 +611,7 @@ function renderStatus(status) {
 async function refreshStatus() {
   if (state.refreshing) return;
   state.refreshing = true;
-  try {renderStatus(await api('/api/status'));setConnected(true);} catch(error) {setConnected(false);showPersistentError(error,'状态刷新');throw error;} finally {state.refreshing=false;}
+  try {renderStatus(await api('/api/status'));setConnected(true);} catch(error) {setConnected(false);showPersistentError(error,appText('状态刷新','Refresh status'));throw error;} finally {state.refreshing=false;}
 }
 
 function configPayload(includeBots=true) {
@@ -439,11 +620,11 @@ function configPayload(includeBots=true) {
   for(const name of ['p0Endpoint','cacheUploadUrl','p0ApiKey','p0ApiKeyFile','p0TimeFormat','timezone','sendTime','llmBaseUrl','llmModel','llmApiKey']) payload[name] = form.elements[name].value.trim();
   payload.reportDays = Number(form.elements.reportDays.value);
   payload.p0MaxAttempts = Number(form.elements.p0MaxAttempts.value);
-  if (!Number.isInteger(payload.p0MaxAttempts) || payload.p0MaxAttempts < 1 || payload.p0MaxAttempts > 50) throw new Error('每页最多尝试次数应为 1–50 之间的整数。');
+  if (!Number.isInteger(payload.p0MaxAttempts) || payload.p0MaxAttempts < 1 || payload.p0MaxAttempts > 50) throw new Error(appText('每页最多尝试次数应为 1–50 之间的整数。','Enter a whole number from 1 to 50 for page attempts.'));
   payload.scheduleEnabled = form.elements.scheduleEnabled.checked;
   payload.llmEnabled = form.elements.llmEnabled.checked;
   payload.llmTimeoutSeconds = Number(form.elements.llmTimeoutSeconds.value);
-  if (!Number.isInteger(payload.llmTimeoutSeconds) || payload.llmTimeoutSeconds < 5 || payload.llmTimeoutSeconds > 300) throw new Error('模型生成时限应为 5–300 秒之间的整数。');
+  if (!Number.isInteger(payload.llmTimeoutSeconds) || payload.llmTimeoutSeconds < 5 || payload.llmTimeoutSeconds > 300) throw new Error(appText('模型生成时限应为 5–300 秒之间的整数。','Enter a whole number from 5 to 300 seconds for the model timeout.'));
   if (!payload.llmApiKey) delete payload.llmApiKey;
   payload.clearLlmApiKey = form.elements.clearLlmApiKey.checked;
   if (payload.clearLlmApiKey) delete payload.llmApiKey;
@@ -462,8 +643,10 @@ function downloadJson(filename, data) {
 
 function parseMap(text,name) {
   let result;
-  try {result=JSON.parse(text);} catch {throw new Error(`${name} JSON 格式不正确，请检查逗号和引号。`);}
-  if (!result || Array.isArray(result) || typeof result !== 'object' || Object.values(result).some((value) => typeof value !== 'string')) throw new Error(`${name}应为键和值均为字符串的 JSON 对象。`);
+  try {result=JSON.parse(text);}
+  catch {throw new Error(appText(`${name} JSON 格式不正确，请检查逗号和引号。`,`${name}: invalid JSON. Check commas and quotation marks.`));}
+  if (!result || Array.isArray(result) || typeof result !== 'object' || Object.values(result).some((value) => typeof value !== 'string'))
+    throw new Error(appText(`${name}应为键和值均为字符串的 JSON 对象。`,`${name}: use a JSON object with string keys and values.`));
   return result;
 }
 // Keep JSON number literals exact before they reach JavaScript's binary Number representation.
@@ -491,30 +674,33 @@ function parsePriceJson(text) {
 
 function parsePriceMap(text) {
   let result;
-  try {result = parsePriceJson(text);} catch {throw new Error('单价映射 JSON 格式不正确，请检查逗号和引号。');}
-  if (!result || Array.isArray(result) || typeof result !== 'object') throw new Error('单价映射应为 task_type 到单价的 JSON 对象。');
+  try {result = parsePriceJson(text);} catch {throw new Error(appText('单价映射 JSON 格式不正确，请检查逗号和引号。','Price mapping JSON is invalid. Check commas and quotation marks.'));}
+  if (!result || Array.isArray(result) || typeof result !== 'object') throw new Error(appText('单价映射应为 task_type 到单价的 JSON 对象。','Use a JSON object mapping task_type values to unit prices.'));
   const entries = Object.entries(result);
-  if (entries.length > 10000) throw new Error('单价映射最多支持 10000 项。');
+  if (entries.length > 10000) throw new Error(appText('单价映射最多支持 10000 项。','Use at most 10,000 unit prices.'));
   for (const [key,value] of entries) {
-    if (!key.trim()) throw new Error('单价映射的 task_type 不能为空。');
+    if (!key.trim()) throw new Error(appText('单价映射的 task_type 不能为空。','A task_type key cannot be empty.'));
     if (typeof value === 'number') {
-      if (!Number.isFinite(value) || value < 0) throw new Error('单价必须是非负有限数字，允许 0。');
+      if (!Number.isFinite(value) || value < 0) throw new Error(appText('单价必须是非负有限数字，允许 0。','A unit price must be a finite number of zero or more.'));
     } else if (typeof value === 'string') {
       const decimal = value.trim();
-      if (!decimal || !/^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(decimal)) throw new Error('单价字符串必须是非负十进制数，不能留空。');
+      if (!decimal || !/^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(decimal)) throw new Error(appText('单价字符串必须是非负十进制数，不能留空。','A unit price string must be a nonempty decimal of zero or more.'));
       result[key] = decimal;
-    } else throw new Error('单价只能是非负数字或十进制字符串，不能是布尔值、null、数组或对象。');
+    } else throw new Error(appText('单价只能是非负数字或十进制字符串，不能是布尔值、null、数组或对象。','Use a nonnegative number or decimal string for each unit price.'));
   }
   return result;
 }
 
 function mappingPayload() {
-  return {channelNames:parseMap($('#channel-map').value,'渠道映射'),workflowNames:parseMap($('#workflow-map').value,'工作流映射'),taskTypePrices:parsePriceMap($('#price-map').value),amountsEnabled:$('#amounts-enabled').checked};
+  return {channelNames:parseMap($('#channel-map').value,appText('渠道映射','Channel mappings')),workflowNames:parseMap($('#workflow-map').value,appText('工作流映射','Workflow mappings')),taskTypePrices:parsePriceMap($('#price-map').value),amountsEnabled:$('#amounts-enabled').checked};
 }
 
 function updatePriceCount() {
-  try {$('#price-map-count').textContent = `${Object.keys(parsePriceMap($('#price-map').value)).length} 条`;}
-  catch {$('#price-map-count').textContent = '待校验';}
+  try {
+    const count = Object.keys(parsePriceMap($('#price-map').value)).length;
+    $('#price-map-count').textContent = appText(`${count} 条`,`${count} ${count === 1 ? 'entry' : 'entries'}`);
+  }
+  catch {$('#price-map-count').textContent = appText('待校验','Check JSON');}
 }
 
 function renderMappings(mappings) {
@@ -537,13 +723,30 @@ for (const [clearName,keyName,hint] of [['clearP0ApiKey','p0ApiKey','#clear-p0-h
   });
 }
 
-$('#add-bot').addEventListener('click',() => {appendBot({enabled:true});$('#save-state').textContent = '机器人列表已修改，请保存配置。';});
+function renderSaveState() {
+  const labels = {
+    changed:['机器人列表已修改，请保存配置。','Bot list edited. Save to apply changes.'],
+    removed:['删除将在保存配置后生效。','Save settings to remove the bot.'],
+    saved:['配置已保存 · 密钥已隐藏','Settings saved. Keys remain hidden.']
+  };
+  if (state.saveState) $('#save-state').textContent = appText(...labels[state.saveState]);
+}
+
+function setSaveState(status) {
+  state.saveState = status;
+  renderSaveState();
+}
+
+$('#add-bot').addEventListener('click',() => {appendBot({enabled:true});setSaveState('changed');});
 $('#telegram-bots').addEventListener('click',(event) => {
   const button = event.target.closest('[data-bot-action]');
   if (!button) return;
   const card = button.closest('[data-bot-card]');
-  if (button.dataset.botAction === 'remove') {card.remove();updateBotCount();$('#save-state').textContent = '删除将在保存配置后生效。';return;}
-  withButton(`#${button.id}`,async () => {const result = await api('/api/test/telegram',{method:'POST',body:JSON.stringify({bot:readBot(card)})});toast(result.message || '机器人连接正常。');},'正在测试');
+  if (button.dataset.botAction === 'remove') {card.remove();updateBotCount();setSaveState('removed');return;}
+  withButton(`#${button.id}`,async () => {
+    const result = await api('/api/test/telegram',{method:'POST',body:JSON.stringify({bot:readBot(card)})});
+    toast(displayServerMessage(result.message || '机器人连接正常。','Bot connection successful.'));
+  },['正在测试','Testing…']);
 });
 $('#telegram-bots').addEventListener('change',(event) => {
   if (event.target.dataset.field !== 'clearToken') return;
@@ -554,7 +757,14 @@ $('#telegram-bots').addEventListener('change',(event) => {
 
 $('#config-form').addEventListener('submit',(event) => {
   event.preventDefault();
-  withButton('#save-config',async () => {const config=await api('/api/config',{method:'PUT',body:JSON.stringify(configPayload())});renderConfig(config);$('#save-state').textContent='配置已保存 · 密钥已隐藏';toast('配置已保存。');await refreshStatus();await loadReport({silent:true});},'正在保存');
+  withButton('#save-config',async () => {
+    const config = await api('/api/config',{method:'PUT',body:JSON.stringify(configPayload())});
+    renderConfig(config);
+    setSaveState('saved');
+    toast(appText('配置已保存。','Settings saved.'));
+    await refreshStatus();
+    await loadReport({silent:true});
+  },['正在保存','Saving…']);
 });
 $('#mapping-form').addEventListener('submit',(event) => {
   event.preventDefault();
@@ -563,22 +773,31 @@ $('#mapping-form').addEventListener('submit',(event) => {
     renderMappings(result);state.summary=null;
     if (state.config) state.config={...state.config,amountsEnabled:Boolean(result.amountsEnabled)};
     try {const config=await api('/api/config');if(state.config) state.config={...state.config,amountsEnabled:Boolean(config.amountsEnabled)};}
-    catch(error) {handleError(error,'刷新金额配置');}
-    await loadReport({silent:true});toast('映射配置已保存。');
-  },'正在保存');
+    catch(error) {handleError(error,appText('刷新金额配置','Refresh price settings'));}
+    await loadReport({silent:true});toast(appText('映射配置已保存。','Mappings saved.'));
+  },['正在保存','Saving…']);
 });
 $('#pull-button').addEventListener('click',() => withButton('#pull-button',async () => {
   await api('/api/pull',{method:'POST',body:JSON.stringify({endDate:$('#end-date').value,force:false})});
-  state.startedJob = true;toast('已开始拉取，缺失的历史日期会自动补齐。');await refreshStatus();
-},'提交任务'));
+  state.startedJob = true;toast(appText('已开始拉取，缺失的历史日期会自动补齐。','Refresh started. Missing report days will be filled in.'));await refreshStatus();
+},['提交任务','Starting…']));
 $('#end-date').addEventListener('change',() => loadReport());
-$('#test-p0').addEventListener('click',() => withButton('#test-p0',async () => {const result=await api('/api/test/p0',{method:'POST',body:JSON.stringify(configPayload(false))});toast(result.message || 'P0 接口连接正常。');},'正在测试'));
-$('#test-llm').addEventListener('click',() => withButton('#test-llm',async () => {const result=await api('/api/test/llm',{method:'POST',body:JSON.stringify(configPayload(false))});if(result.status === 'failed') showPersistentError(diagnosticError(result.message || 'AI 模型连接失败。','/api/test/llm',{method:'POST'},null,result.errorDetails),'LLM 连接测试');toast(redactDiagnostic(result.message || 'AI 模型服务连接正常。'),result.status === 'failed');},'正在测试'));
+$('#test-p0').addEventListener('click',() => withButton('#test-p0',async () => {
+  const result = await api('/api/test/p0',{method:'POST',body:JSON.stringify(configPayload(false))});
+  toast(displayServerMessage(result.message || 'P0 接口连接正常。','P0 connection successful.'));
+},['正在测试','Testing…']));
+$('#test-llm').addEventListener('click',() => withButton('#test-llm',async () => {
+  const result = await api('/api/test/llm',{method:'POST',body:JSON.stringify(configPayload(false))});
+  const failed = result.status === 'failed';
+  if (failed) showPersistentError(diagnosticError(result.message || 'AI 模型连接失败。','/api/test/llm',{method:'POST'},null,result.errorDetails),appText('LLM 连接测试','Test AI connection'));
+  const defaultMessage = failed ? 'AI 模型连接失败。' : 'AI 模型服务连接正常。';
+  toast(displayServerMessage(result.message || defaultMessage,failed ? 'AI connection failed. See error details.' : 'AI connection successful.'),failed);
+},['正在测试','Testing…']));
 $('#summary-cancel').addEventListener('click',() => reportAiController?.abort());
 $('#summary-button').addEventListener('click',() => withButton('#summary-button',async () => {
   if (!state.report) return;
   const timeoutSeconds = Number($('#summary-timeout').value);
-  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 5 || timeoutSeconds > 300) throw new Error('AI 时限应为 5–300 秒。');
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 5 || timeoutSeconds > 300) throw new Error(appText('AI 时限应为 5–300 秒。','The AI timeout must be between 5 and 300 seconds.'));
   const report = state.report;
   const configReference = state.config;
   const controller = new AbortController();
@@ -589,86 +808,117 @@ $('#summary-button').addEventListener('click',() => withButton('#summary-button'
   renderAiPreview();updateActions();
   try {
     const result = await runAiTask({kind:'report',endDate:report.endDate},{timeoutSeconds,signal:controller.signal,onProgress:({remainingSeconds}) => {
-      $('#summary-progress').textContent = `剩余 ${remainingSeconds} 秒`;
+      state.summaryRemaining = remainingSeconds;
+      renderSummaryProgress();
     }});
     if (state.config !== configReference || state.report?.endDate !== report.endDate || state.report?.text !== report.text) return;
     state.summary = {...result,endDate:report.endDate,rawText:report.text,text:result.aiStatus === 'ok' ? (result.text || report.text) : report.text};
     renderAiPreview();
-    if (result.aiStatus === 'failed') showPersistentError(diagnosticError(result.aiMessage || 'AI 总结暂不可用，已保留原始日报。','/api/ai/status',{method:'GET'},null,result.errorDetails),'AI 总结');
-    toast(result.aiStatus === 'ok' ? 'AI 总结已加入预览。' : (result.aiMessage || 'AI 总结未生成，已保留原始日报。'));
+    if (result.aiStatus === 'failed') showPersistentError(diagnosticError(result.aiMessage || 'AI 总结暂不可用，已保留原始日报。','/api/ai/status',{method:'GET'},null,result.errorDetails),appText('AI 总结','AI summary'));
+    toast(result.aiStatus === 'ok' ? appText('AI 总结已加入预览。','AI summary added to preview.')
+      : displayServerMessage(result.aiMessage || 'AI 总结未生成，已保留原始日报。','AI summary was not generated. The original report is available.'));
   } catch(error) {
     if (state.config === configReference && state.report?.endDate === report.endDate && state.report?.text === report.text) {
       state.summary = {endDate:report.endDate,rawText:report.text,text:report.text,aiStatus:error.name === 'AbortError' ? 'cancelled' : 'failed',aiMessage:error.message};
       renderAiPreview();
     }
-    if (error.name === 'AbortError') {toast('AI 生成已取消。');return;}
+    if (error.name === 'AbortError') {toast(appText('AI 生成已取消。','AI generation canceled.'));return;}
     throw error;
   } finally {
     if (reportAiController === controller) reportAiController = null;
     $('#summary-cancel').classList.add('hidden');
     $('#summary-timeout').disabled = false;
-    $('#summary-progress').textContent = '';
+    state.summaryRemaining = null;
+    renderSummaryProgress();
   }
-},'正在生成'));
+},['正在生成','Generating…']));
+
+function selectedTargets() {
+  const selected = $('#send-target').value;
+  return readyBots().filter((bot) => !selected || bot.id === selected);
+}
+
+function renderSendDialog(targets) {
+  $('#confirm-chat').innerHTML = targets.map((bot) => {
+    const subscriptions = state.status?.subscriptions;
+    const count = (subscriptions || []).filter((subscription) => subscription.botId === bot.id).length;
+    const automatic = bot.autoDiscover !== false ? appText(
+      `自动登记群组与私聊${subscriptions ? `（${count} 个）` : ''}`,
+      `Auto-registered chats${subscriptions ? ` (${count})` : ''}`
+    ) : '';
+    const manual = bot.chatId ? appText(
+      `手动会话 ${bot.chatId}${bot.threadId ? ` · 话题 ${bot.threadId}` : ''}`,
+      `Manual chat ${bot.chatId}${bot.threadId ? ` · Topic ${bot.threadId}` : ''}`
+    ) : '';
+    const label = [bot.name || appText('机器人','Bot'),automatic,manual].filter(Boolean).join(' · ');
+    return `<div class="mb-1">${escapeHtml(label)}</div>`;
+  }).join('');
+  $('#confirm-period').textContent = `${state.report.startDate} — ${state.report.endDate}`;
+}
+
 $('#send-button').addEventListener('click',() => {
   if (!state.report) return;
-  const selected = $('#send-target').value;
-  const targets = readyBots().filter((bot) => !selected || bot.id === selected);
-  if (!targets.length) {toast('请先保存至少一个已启用且配置完整的机器人。',true);return;}
-  $('#confirm-chat').innerHTML = targets.map((bot) => {
-    const count = (state.status?.subscriptions || []).filter((subscription) => subscription.botId === bot.id).length;
-    const automatic = bot.autoDiscover !== false ? `自动登记的群组/私聊${state.status?.subscriptions ? `（${count} 个）` : ''}` : '';
-    const manual = bot.chatId ? `${automatic ? '；手动 ' : ''}${bot.chatId}${bot.threadId ? ` · 话题 ${bot.threadId}` : ''}` : '';
-    return `<div class="mb-1">${escapeHtml(bot.name || '机器人')} · ${escapeHtml(automatic + manual)}</div>`;
-  }).join('');
-  $('#confirm-period').textContent=`${state.report.startDate} — ${state.report.endDate}`;
+  const targets = selectedTargets();
+  if (!targets.length) {toast(appText('请先保存至少一个已启用且配置完整的机器人。','Save at least one configured, enabled bot.'),true);return;}
+  renderSendDialog(targets);
   showModal('#send-dialog');
 });
 $('#cancel-send').addEventListener('click',() => hideModal('#send-dialog'));
 $('#confirm-send').addEventListener('click',() => withButton('#confirm-send',async () => {
   await api('/api/send',{method:'POST',body:JSON.stringify({endDate:state.report.endDate,...($('#send-target').value ? {botId:$('#send-target').value} : {})})});
-  hideModal('#send-dialog');state.startedJob=true;toast('发送任务已提交。');await refreshStatus();
-},'正在提交'));
-$('#copy-button').addEventListener('click',() => withButton('#copy-button',async () => {await copyText(state.summary?.text || state.report?.text || '');toast('报表已复制。');}));
-$('#refresh-status').addEventListener('click',() => withButton('#refresh-status',async () => {await refreshStatus();toast('记录已更新。');},'正在刷新'));
+  hideModal('#send-dialog');state.startedJob=true;toast(appText('发送任务已提交。','Report delivery started.'));await refreshStatus();
+},['正在提交','Submitting…']));
+$('#copy-button').addEventListener('click',() => withButton('#copy-button',async () => {await copyText(state.summary?.text || state.report?.text || '');toast(appText('报表已复制。','Report copied.'));}));
+$('#refresh-status').addEventListener('click',() => withButton('#refresh-status',async () => {await refreshStatus();toast(appText('记录已更新。','Activity refreshed.'));},['正在刷新','Refreshing…']));
 $('#export-config').addEventListener('click',() => {
   if (!state.config) return;
   const {p0ApiKey,telegramBotToken,llmApiKey,p0ApiKeyConfigured,telegramBotTokenConfigured,llmApiKeyConfigured,...safe}=state.config;
   safe.telegramBots = (safe.telegramBots || []).map(({token,tokenConfigured,...bot}) => bot);
-  downloadJson('aiapi-config.json',safe);toast('已导出配置，不包含 P0、Telegram 或模型密钥。');
+  downloadJson('aiapi-config.json',safe);toast(appText('已导出配置，不包含 P0、Telegram 或模型密钥。','Exported settings with API keys and bot tokens removed.'));
 });
 $('#export-mappings').addEventListener('click',() => {
-  try {downloadJson('aiapi-mappings.json',mappingPayload());} catch(error){handleError(error,'导出映射配置');}
+  try {downloadJson('aiapi-mappings.json',mappingPayload());} catch(error){handleError(error,appText('导出映射配置','Export mappings'));}
 });
-for(const [inputId,textareaId,label,key] of [['import-channels','channel-map','渠道映射','channelNames'],['import-workflows','workflow-map','工作流映射','workflowNames']]) {
+for(const [inputId,textareaId,labels,key] of [['import-channels','channel-map',['渠道映射','Channel mappings'],'channelNames'],['import-workflows','workflow-map',['工作流映射','Workflow mappings'],'workflowNames']]) {
   $(`#${inputId}`).addEventListener('change',async(event) => {
     const file=event.target.files[0];if(!file) return;
-    try {if(file.size>2*1024*1024) throw new Error('映射文件不能超过 2 MB。');const raw=JSON.parse(await file.text());const data=raw[key] || raw;const parsed=parseMap(JSON.stringify(data),label);$(`#${textareaId}`).value=JSON.stringify(parsed,null,2);toast(`已导入 ${Object.keys(parsed).length} 个名称，请保存映射。`);} catch(error){handleError(error instanceof SyntaxError ? new Error('文件不是有效的 JSON。') : error,'导入名称映射');} finally{event.target.value='';}
+    try {
+      if (file.size>2*1024*1024) throw new Error(appText('映射文件不能超过 2 MB。','Mapping files must be 2 MB or smaller.'));
+      const raw = JSON.parse(await file.text());
+      const parsed = parseMap(JSON.stringify(raw[key] || raw),appText(...labels));
+      $(`#${textareaId}`).value = JSON.stringify(parsed,null,2);
+      const count = Object.keys(parsed).length;
+      toast(appText(`已导入 ${count} 个名称，请保存映射。`,`Imported ${count} ${count === 1 ? 'name' : 'names'}. Save the mappings to apply them.`));
+    } catch(error) {
+      handleError(error instanceof SyntaxError ? new Error(appText('文件不是有效的 JSON。','The file is not valid JSON.')) : error,appText('导入名称映射','Import name mappings'));
+    } finally {event.target.value = '';}
   });
 }
 $('#price-map').addEventListener('input',updatePriceCount);
 $('#export-prices').addEventListener('click',() => {
   try {downloadJson('aiapi-task-prices.json',{amountsEnabled:$('#amounts-enabled').checked,taskTypePrices:parsePriceMap($('#price-map').value)});}
-  catch(error) {handleError(error,'导出单价映射');}
+  catch(error) {handleError(error,appText('导出单价映射','Export unit prices'));}
 });
 $('#import-prices').addEventListener('change',async(event) => {
   const file=event.target.files[0];if(!file) return;
   try {
-    if (file.size>2*1024*1024) throw new Error('单价映射文件不能超过 2 MB。');
+    if (file.size>2*1024*1024) throw new Error(appText('单价映射文件不能超过 2 MB。','Unit price files must be 2 MB or smaller.'));
     const raw=parsePriceJson(await file.text());
     const wrapped=raw && typeof raw==='object' && !Array.isArray(raw) && Object.hasOwn(raw,'taskTypePrices');
     const prices=parsePriceMap(JSON.stringify(wrapped ? raw.taskTypePrices : raw));
-    if (wrapped && Object.hasOwn(raw,'amountsEnabled') && typeof raw.amountsEnabled!=='boolean') throw new Error('amountsEnabled 必须是 true 或 false。');
+    if (wrapped && Object.hasOwn(raw,'amountsEnabled') && typeof raw.amountsEnabled!=='boolean') throw new Error(appText('amountsEnabled 必须是 true 或 false。','amountsEnabled must be true or false.'));
     $('#price-map').value=JSON.stringify(prices,null,2);
     if (wrapped && Object.hasOwn(raw,'amountsEnabled')) $('#amounts-enabled').checked=raw.amountsEnabled;
-    updatePriceCount();toast(`已导入 ${Object.keys(prices).length} 条单价，请保存映射配置。`);
-  } catch(error) {handleError(error instanceof SyntaxError ? new Error('文件不是有效的 JSON。') : error,'导入单价映射');}
+    updatePriceCount();
+    const count = Object.keys(prices).length;
+    toast(appText(`已导入 ${count} 条单价，请保存映射配置。`,`Imported ${count} unit ${count === 1 ? 'price' : 'prices'}. Save the mappings to apply them.`));
+  } catch(error) {handleError(error instanceof SyntaxError ? new Error(appText('文件不是有效的 JSON。','The file is not valid JSON.')) : error,appText('导入单价映射','Import unit prices'));}
   finally {event.target.value='';}
 });
 $('#copy-error').addEventListener('click',async () => {
   if (!state.persistentError) return;
-  try {await copyText(state.persistentError.text);toast('脱敏错误详情已复制，可直接粘贴反馈。');}
-  catch {toast('无法自动复制，请展开详情后手动复制。',true);}
+  try {await copyText(state.persistentError.text);toast(appText('脱敏错误详情已复制，可直接粘贴反馈。','Redacted error details copied.'));}
+  catch {toast(appText('无法自动复制，请展开详情后手动复制。','Could not copy automatically. Open the details and copy the text manually.'),true);}
 });
 $('#clear-error').addEventListener('click',() => {
   state.persistentError = null;
@@ -676,21 +926,34 @@ $('#clear-error').addEventListener('click',() => {
   $('#error-message').textContent = '';$('#error-details').textContent = '';
 });
 window.addEventListener('error',() => {
-  const error = diagnosticError('页面脚本发生错误，请复制详情反馈。',location.pathname,{method:'BROWSER'});
-  showPersistentError(error,'页面脚本');
+  const error = diagnosticError(appText('页面脚本发生错误，请复制详情反馈。','A page script failed. Copy the error details to report it.'),location.pathname,{method:'BROWSER'});
+  showPersistentError(error,appText('页面脚本','Page script'));
 });
 window.addEventListener('unhandledrejection',() => {
-  const error = diagnosticError('页面操作未完成，请复制详情反馈。',location.pathname,{method:'BROWSER'});
-  showPersistentError(error,'页面操作');
+  const error = diagnosticError(appText('页面操作未完成，请复制详情反馈。','The page action did not finish. Copy the error details to report it.'),location.pathname,{method:'BROWSER'});
+  showPersistentError(error,appText('页面操作','Page action'));
 });
 window.addEventListener('hashchange',setView);
+window.addEventListener('app-language-change',() => {
+  renderViewName();
+  if (state.connected != null) setConnected(state.connected);
+  if (state.config) renderConfigLabels(state.config);
+  renderBotLanguage();
+  renderSaveState();
+  renderReportView(state.report);
+  if (state.status) renderStatusView(state.status);
+  if (state.report && $('#send-dialog').classList.contains('show')) renderSendDialog(selectedTargets());
+  updatePriceCount();
+  renderErrorMessage();
+  $('#toast').classList.add('hidden');
+});
 
 async function initialize(loadConfig=true) {
   try {
     if(loadConfig) renderConfig(await api('/api/config'));
     const results=await Promise.allSettled([api('/api/mappings'),refreshStatus(),loadReport({silent:true})]);
     if(results[0].status==='fulfilled') renderMappings(results[0].value);
-    else handleError(results[0].reason,'加载名称映射');
+    else handleError(results[0].reason,appText('加载名称映射','Load name mappings'));
     if(results[1].status==='rejected') handleError(results[1].reason);
   } catch(error){setConnected(false);handleError(error);}
 }

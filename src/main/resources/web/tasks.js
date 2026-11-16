@@ -5,10 +5,13 @@ window.P0Tasks = (() => {
   const el = (id) => document.getElementById(id);
   const esc = (value) => escapeHtml(value);
   const fmt = (value) => value == null ? '—' : number(value);
+  const t = (zh,en) => window.AppLanguage.t(zh,en);
+  const locale = () => window.AppLanguage.locale();
+  const english = () => locale() === 'en';
   const codes = ['0','1','2','3','-1'];
   const lookupLanguages = {
     'zh-CN': {
-      home:'返回运营台', title:'单条任务查询', identifier:'标识类型', language:'界面语言', taskId:'任务 ID',
+      title:'单条任务查询', identifier:'标识类型', taskId:'任务 ID',
       placeholder:(id) => `输入${id === 'UUID' ? ' ' : ''}${id}`, search:'查询', searching:'查询中…',
       details:'任务详情', json:'完整数据', copy:'复制 JSON', copied:'已复制 JSON。', copyFailed:'复制失败，请手动复制 JSON。',
       missing:(id) => `请输入${id === 'UUID' ? ' ' : ''}${id}。`, notFound:'未找到匹配的任务。', found:'已找到任务。',
@@ -16,7 +19,7 @@ window.P0Tasks = (() => {
       failed:'查询失败，请稍后重试。'
     },
     en: {
-      home:'Dashboard', title:'Task lookup', identifier:'Identifier type', language:'Language', taskId:'Task ID',
+      title:'Task lookup', identifier:'Identifier type', taskId:'Task ID',
       placeholder:(id) => `Enter ${id}`, search:'Look up', searching:'Looking up…',
       details:'Task details', json:'Raw JSON', copy:'Copy JSON', copied:'JSON copied.', copyFailed:'Could not copy. Select and copy the JSON manually.',
       missing:(id) => `Enter a ${id}.`, notFound:'No matching task found.', found:'Task found.',
@@ -24,27 +27,31 @@ window.P0Tasks = (() => {
       failed:'Could not look up the task. Try again.'
     }
   };
-  const appTitle = document.title;
   let config = null;
   let applied = null;
+  let queryChanged = false;
   let pageData = null;
+  let listError = null;
   let statistics = null;
+  let statsQuery = null;
+  let statsError = null;
   let quickRange = null;
   let listController = null;
   let statsController = null;
   let failureController = null;
   let failureBreakdown = null;
+  let failureError = null;
   let aiController = null;
   let listSequence = 0;
   let statsSequence = 0;
   let aiSequence = 0;
   let listBusy = false;
   let statsBusy = false;
+  let aiDisplay = null;
+  let detailRow = null;
   let lookupController = null;
-  let lookupLanguage = 'zh-CN';
   let lookupResult = null;
   let lookupMessageKey = '';
-  try {if (localStorage.getItem('p0-lookup-language') === 'en') lookupLanguage = 'en';} catch { /* Storage can be unavailable. */ }
 
   const first = (row, names) => {
     for (const name of names) {
@@ -58,11 +65,12 @@ window.P0Tasks = (() => {
   const taskType = (row) => scalar(first(row,['task_type','taskType','type']));
   const workflowName = (row) => scalar(first(row,['workflow_name','workflowName']));
   const channel = (row) => scalar(first(row,['hash_key','hashKey','user_hash','userHash']));
-  const statusLabel = (value, english=false) => {
-    if (english) return ({'-1':'Failed · -1','0':'Processing · 0','1':'Legacy status · 1','2':'Succeeded · 2','3':'Watermarking · 3'}[String(value)] || `Status ${value === '' ? 'unknown' : value}`);
-    return ({'-1':'失败 · -1','0':'处理中 · 0','1':'旧状态 · 1','2':'成功 · 2','3':'加水印中 · 3'}[String(value)] || `状态 ${value === '' ? '未知' : value ?? '未知'}`);
-  };
-  const filterCaption = (query) => [['工作流',query.task_type],['HashKey',query.hash_key],['任务 ID',query.task_id]].filter(([,value]) => value).map(([name,value]) => `${name} ${compact(value,32)}`).join(' · ');
+  const statuses = {'-1':['失败','Failed'],'0':['处理中','Processing'],'1':['旧状态','Legacy status'],
+    '2':['成功','Succeeded'],'3':['加水印中','Watermarking']};
+  const statusLabel = (value) => Object.hasOwn(statuses,value)
+    ? `${t(...statuses[value])} · ${value}` : t(`状态 ${value || '未知'}`,`Status ${value || 'unknown'}`);
+  const filterCaption = (query) => [[t('工作流','Workflow'),query.task_type],['HashKey',query.hash_key],
+    [t('任务 ID','Task ID'),query.task_id]].filter(([,value]) => value).map(([name,value]) => `${name} ${compact(value,32)}`).join(' · ');
   const displayTime = (value) => {
     if (value === '' || value == null) return '—';
     if (typeof value === 'number') {
@@ -102,14 +110,17 @@ window.P0Tasks = (() => {
   function inputQuery() {
     const start = el('tasks-start').value;
     const end = el('tasks-end').value;
-    if (!start || !end) throw new Error('请选择完整的开始和结束时间。');
+    if (!start || !end) throw taskError('请选择完整的开始和结束时间。','Choose both a start and end time.');
     const seconds = (value) => value.length === 16 ? `${value}:00` : value;
-    if (seconds(start) > seconds(end)) throw new Error('开始时间不能晚于结束时间。');
+    if (seconds(start) > seconds(end)) throw taskError('开始时间不能晚于结束时间。','Start time cannot be after end time.');
     return {start_time:`${seconds(start)}.000000`,end_time:`${seconds(end)}.999999`,status:el('tasks-status').value,task_type:el('tasks-type').value.trim(),hash_key:el('tasks-hash').value.trim(),task_id:el('tasks-id').value.trim(),page:1,page_size:Number(el('tasks-page-size').value)};
   }
 
   function queryNote() {
-    return quickRange === 'yesterday' ? '按当前日期查询昨天完整一天' : quickRange ? '查询时自动更新至当前时间' : '固定起止时间；按任务创建时间筛选';
+    if (queryChanged) return t('条件已修改，点击「查询」后应用。','Search to apply the changed filters.');
+    if (quickRange === 'yesterday') return t('按当前日期查询昨天完整一天','Search the full previous day.');
+    if (quickRange) return t('查询时自动更新至当前时间','The time range updates when you search.');
+    return t('固定起止时间，按任务创建时间筛选','Fixed time range based on task creation time.');
   }
 
   function edited(event) {
@@ -117,7 +128,8 @@ window.P0Tasks = (() => {
       quickRange = null;
       document.querySelectorAll('[data-task-range]').forEach((button) => button.classList.remove('active'));
     }
-    el('tasks-query-note').textContent = applied ? '条件已修改，点击「查询」后应用。' : queryNote();
+    queryChanged = Boolean(applied);
+    el('tasks-query-note').textContent = queryNote();
   }
 
   async function get(path, signal) {
@@ -131,7 +143,7 @@ window.P0Tasks = (() => {
       return await api(path,{signal:controller.signal});
     } catch (error) {
       if (signal?.aborted) throw new DOMException('查询已取消','AbortError');
-      if (timedOut) throw new Error('P0 查询超时，请缩小时间范围后重试。');
+      if (timedOut) throw taskError('P0 查询超时，请缩小时间范围后重试。','P0 timed out. Shorten the date range and try again.');
       throw error;
     } finally {
       clearTimeout(timer);
@@ -150,10 +162,20 @@ window.P0Tasks = (() => {
     return params;
   }
 
-  function errorText(error, context) {
-    const message = error?.message || '操作失败，请重试。';
+  function taskError(zh, en) {
+    return Object.assign(new Error(zh),{translatedMessage:[zh,en]});
+  }
+
+  function errorText(error) {
+    if (error?.translatedMessage) return t(...error.translatedMessage);
+    const detail = redactDiagnostic(error?.message || '');
+    if (detail && (!english() || !/\p{Script=Han}/u.test(detail))) return detail;
+    const status = detail.match(/\bHTTP (\d{3})\b/)?.[1] || error?.status;
+    return t('操作失败，请重试。',status ? `Request failed (HTTP ${status}). Try again.` : 'Request failed. Try again.');
+  }
+
+  function notifyError(error, context) {
     if (typeof handleError === 'function') handleError(error,context);
-    return redactDiagnostic(message);
   }
 
   function stopAi(showMessage=false) {
@@ -163,15 +185,15 @@ window.P0Tasks = (() => {
     el('tasks-ai-cancel').classList.add('hidden');
     el('tasks-ai-timeout').disabled = false;
     if (showMessage) {
-      el('tasks-ai-output').textContent = '已取消 AI 简报，任务查询和统计可以继续使用。';
-      el('tasks-ai-output').classList.remove('hidden');
+      aiDisplay = {state:'cancelled'};
+      renderAi();
     }
     updateActions();
   }
 
   function updateActions() {
     el('tasks-search').disabled = listBusy;
-    el('tasks-search').querySelector('span').textContent = listBusy ? '查询中' : '查询';
+    el('tasks-search').querySelector('span').textContent = listBusy ? t('查询中','Searching…') : t('查询','Search');
     el('tasks-search').querySelector('svg').classList.toggle('spinning',listBusy);
     el('tasks-reset').disabled = listBusy;
     el('tasks-prev').disabled = listBusy || !applied || applied.page <= 1;
@@ -179,9 +201,10 @@ window.P0Tasks = (() => {
     el('tasks-page-size').disabled = listBusy;
     el('tasks-export').disabled = listBusy || !pageData?.items?.length;
     el('tasks-failure-load').disabled = !applied || !!failureController;
-    el('tasks-failure-load').textContent = failureController ? '正在分类' : failureBreakdown ? '刷新失败分类' : '查看失败分类';
+    el('tasks-failure-load').textContent = failureController ? t('正在分类','Grouping…') : failureBreakdown
+      ? t('刷新失败分类','Refresh failures') : t('查看失败分类','Show failures');
     el('tasks-ai-generate').disabled = !statistics || statistics.complete === false || statsBusy || !!aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured;
-    el('tasks-ai-generate').textContent = aiController ? '正在生成' : '重新生成';
+    el('tasks-ai-generate').textContent = aiController ? t('正在生成','Generating…') : t('重新生成','Regenerate');
   }
 
   function renderStats() {
@@ -189,13 +212,40 @@ window.P0Tasks = (() => {
     for (const code of codes) {
       const count = statistics?.counts?.[code];
       el(`tasks-count-${code}`).textContent = fmt(count);
-      el(`tasks-ratio-${code}`).textContent = count == null ? statistics?.complete === false ? '统计未完成' : '点击筛选' : statistics?.consistent === false ? '独立查询计数' : statistics?.total > 0 ? `占比 ${(Number(count)/Number(statistics.total)*100).toFixed(1)}%` : statistics?.total === 0 ? '该时间段暂无任务' : '点击筛选';
+      let caption = t('点击筛选','Select to filter');
+      if (count == null && statistics?.complete === false) caption = t('统计未完成','Count unavailable');
+      else if (count != null && statistics?.consistent === false) caption = t('独立查询计数','Counted separately');
+      else if (count != null && statistics?.total > 0) {
+        const ratio = (Number(count) / Number(statistics.total) * 100).toFixed(1);
+        caption = t(`占比 ${ratio}%`,`${ratio}% of total`);
+      } else if (statistics?.total === 0) caption = t('该时间段暂无任务','No tasks in this period');
+      el(`tasks-ratio-${code}`).textContent = caption;
     }
     document.querySelectorAll('[data-task-status]').forEach((button) => {
       button.classList.toggle('active',button.dataset.taskStatus === (applied?.status ?? ''));
       button.setAttribute('aria-pressed',String(button.dataset.taskStatus === (applied?.status ?? '')));
     });
+    renderStatsCaption();
     updateActions();
+  }
+
+  function renderStatsCaption() {
+    let caption = t('时间段统计 · 全部状态','Time range · All statuses');
+    if (statistics) {
+      const difference = statistics.snapshotDifference;
+      const scope = statsQuery && filterCaption(statsQuery) ? t('匹配条件的全部状态','All matching statuses') : t('全部状态','All statuses');
+      const parts = [t('时间段统计','Time range'),scope];
+      if (statistics.complete === false) parts.push(t('部分状态统计未完成，请缩短时间段或重试','Some counts are unavailable. Shorten the time range or retry.'));
+      else if (difference != null && Number(difference) !== 0) parts.push(t(
+        `状态统计与总数差 ${fmt(difference)}，任务状态可能在查询期间变化`,
+        `Status counts differ from the total by ${fmt(difference)}. Some statuses may have changed while loading.`));
+      parts.push(config?.timezone || statistics.timezone);
+      caption = parts.filter(Boolean).join(' · ');
+    } else if (statsError) caption = t(`统计未完成：${errorText(statsError)}`,`Could not count tasks. ${errorText(statsError)}`);
+    else if (statsBusy) caption = t('正在统计完整时间段…','Counting tasks across the time range…');
+    el('tasks-stats-caption').textContent = caption;
+    el('tasks-stats-retry').classList.toggle('hidden',!statsError && statistics?.complete !== false && statistics?.consistent !== false);
+    renderAiScope();
   }
 
   async function loadStatistics(query) {
@@ -204,24 +254,20 @@ window.P0Tasks = (() => {
     const sequence = ++statsSequence;
     stopAi();
     statistics = null;
+    statsQuery = query;
+    statsError = null;
     statsBusy = true;
-    el('tasks-ai-output').classList.add('hidden');
-    el('tasks-stats-caption').textContent = '正在统计完整时间段…';
-    el('tasks-stats-retry').classList.add('hidden');
+    aiDisplay = null;
+    renderAi();
     renderStats();
     try {
       const response = await get(`/api/tasks/statistics?${queryParams(query,true)}`,statsController.signal);
       if (sequence !== statsSequence) return;
       statistics = response;
-      const difference = response.snapshotDifference;
-      const note = response.complete === false ? ' · 部分状态统计未完成，请缩短时间段或重试' : difference != null && Number(difference) !== 0 ? ` · 状态统计与总数差 ${fmt(difference)}，任务状态可能在查询期间变化` : '';
-      el('tasks-stats-caption').textContent = `时间段统计 · ${filterCaption(query) ? '匹配条件的全部状态' : '全部状态'}${note} · ${config?.timezone || response.timezone}`;
-      el('tasks-stats-retry').classList.toggle('hidden',response.complete !== false && response.consistent !== false);
-      el('tasks-ai-scope').textContent = response.complete === false ? '部分状态统计尚未完成，补齐后自动生成 AI 简报。' : config?.llmEnabled && config?.llmApiKeyConfigured ? '查询后自动分析未成功任务、工作流与渠道集中情况，并给出排查重点。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
     } catch (error) {
       if (sequence !== statsSequence || error.name === 'AbortError') return;
-      el('tasks-stats-caption').textContent = `统计未完成：${errorText(error,'P0 时间段统计')}`;
-      el('tasks-stats-retry').classList.remove('hidden');
+      statsError = error;
+      notifyError(error,t('P0 时间段统计','P0 status counts'));
     } finally {
       if (sequence === statsSequence) {
         statsBusy=false;
@@ -237,32 +283,51 @@ window.P0Tasks = (() => {
     const sequence = ++listSequence;
     applied = {...query};
     pageData = null;
+    listError = null;
+    queryChanged = false;
     listBusy = true;
-    el('tasks-list-error').classList.add('hidden');
-    el('tasks-query-note').textContent = queryNote();
-    el('tasks-applied').textContent = `${displayTime(query.start_time)} — ${displayTime(query.end_time)} · ${query.status === '' ? '全部状态' : statusLabel(query.status)}${filterCaption(query) ? ' · ' + filterCaption(query) : ''}`;
-    el('tasks-result-count').textContent = '查询中';
-    el('tasks-rows').innerHTML = '';
-    el('tasks-empty').classList.remove('hidden');
-    el('tasks-empty').querySelector('p').textContent = '正在加载任务…';
-    el('tasks-page-info').textContent = '正在查询 P0';
+    renderListState();
     renderStats();
     try {
       const response = await get(`/api/tasks?${queryParams(query)}`,listController.signal);
       if (sequence !== listSequence) return;
       pageData = response;
       if (Number.isInteger(response.pageSize) && response.pageSize > 0) applied.page_size = response.pageSize;
-      renderRows();
     } catch (error) {
       if (sequence !== listSequence || error.name === 'AbortError') return;
-      el('tasks-list-error').textContent = errorText(error,'P0 任务查询');
-      el('tasks-list-error').classList.remove('hidden');
-      el('tasks-result-count').textContent = '查询失败';
-      el('tasks-empty').querySelector('p').textContent = '任务未加载，请调整条件或重新查询。';
-      el('tasks-page-info').textContent = '—';
+      listError = error;
+      notifyError(error,t('P0 任务查询','P0 task search'));
     } finally {
-      if (sequence === listSequence) {listBusy=false;updateActions();}
+      if (sequence === listSequence) {
+        listBusy = false;
+        renderListState();
+        updateActions();
+      }
     }
+  }
+
+  function renderListState() {
+    el('tasks-query-note').textContent = queryNote();
+    if (applied) {
+      const status = applied.status === '' ? t('全部状态','All statuses') : statusLabel(applied.status);
+      const filters = filterCaption(applied);
+      el('tasks-applied').textContent = `${displayTime(applied.start_time)} — ${displayTime(applied.end_time)} · ${status}${filters ? ' · ' + filters : ''}`;
+    } else {
+      el('tasks-applied').textContent = t('查询后显示任务信息。','Search to see tasks.');
+    }
+    el('tasks-list-error').classList.toggle('hidden',!listError);
+    if (listError) el('tasks-list-error').textContent = errorText(listError);
+    if (pageData) {
+      renderRows();
+      return;
+    }
+    el('tasks-rows').innerHTML = '';
+    el('tasks-empty').classList.remove('hidden');
+    el('tasks-result-count').textContent = listBusy ? t('查询中','Searching…') : listError ? t('查询失败','Search failed') : t('待查询','Awaiting search');
+    el('tasks-empty').querySelector('p').textContent = listBusy ? t('正在加载任务…','Loading tasks…')
+      : listError ? t('任务未加载，请调整条件或重新查询。','Tasks could not load. Change your filters or retry.')
+        : t('选择条件后查询任务。','Choose filters to search for tasks.');
+    el('tasks-page-info').textContent = listBusy ? t('正在查询 P0','Searching P0') : '—';
   }
 
   async function search() {
@@ -272,29 +337,48 @@ window.P0Tasks = (() => {
       el('tasks-keyword').value = '';
       resetFailureBreakdown();
       await Promise.allSettled([loadList(query),loadStatistics(query)]);
-    } catch (error) {errorText(error,'P0 查询条件');}
+    } catch (error) {notifyError(error,t('P0 查询条件','P0 search filters'));}
   }
 
   function resetFailureBreakdown() {
     failureController?.abort();
     failureController = null;
     failureBreakdown = null;
-    el('tasks-failure-summary').textContent = '按当前查询条件查看失败任务（状态 -1）的分布。';
+    failureError = null;
     renderFailureBreakdown();
   }
 
   function renderFailureBreakdown() {
+    const summary = el('tasks-failure-summary');
+    const result = failureBreakdown;
+    if (failureError) summary.textContent = errorText(failureError);
+    else if (result) {
+      const count = fmt(result.observedCount);
+      if (result.complete) summary.textContent = result.observedCount
+        ? t(`已分类 ${count} 条失败任务，按失败单数降序排列。`,`Grouped ${count} failed tasks by count, highest first.`)
+        : t('当前查询范围内没有符合条件的失败任务。','No failed tasks match these filters.');
+      else {
+        const reported = result.expectedCount == null ? '' : t(`（上游总数 ${fmt(result.expectedCount)} 条）`,` of ${fmt(result.expectedCount)} reported upstream`);
+        const reason = result.requestFailed ? t('明细读取中断','The request was interrupted') : result.truncated
+          ? t('已达到读取上限','The read limit was reached') : t('明细尚未读全','Some records could not be read');
+        summary.textContent = t(`${reason}，已读取 ${count} 条失败任务${reported}。占比按已读取记录计算，可缩短时间范围后重试。`,
+          `${reason}. Read ${count} failed tasks${reported}. Percentages use the records read. Shorten the time range to retry.`);
+      }
+    } else summary.textContent = failureController ? t('正在读取失败任务明细…','Loading failed tasks…')
+      : t('按当前查询条件查看失败任务（状态 -1）的分布。','Group failed tasks (status -1) using the current filters.');
     const rows = failureBreakdown?.rows || [];
     el('tasks-failure-table').classList.toggle('hidden',!rows.length);
     el('tasks-failure-group').classList.toggle('hidden',!rows.length);
     if (!rows.length) return;
     const by = el('tasks-failure-group').value;
     const axes = by === 'both' ? ['workflowName','taskType'] : [by];
-    const labels = {workflowName:'Workflow name',taskType:'Task type'};
+    const labels = {workflowName:t('工作流名称','Workflow name'),taskType:t('任务类型','Task type')};
+    const missingLabels = {'未提供名称':t('未提供名称','Unnamed workflow'),'未提供类型':t('未提供类型','Unknown task type')};
     const groups = new Map();
     for (const row of rows) {
-      const values = axes.map((axis) => row[axis]);
-      const key = JSON.stringify(values);
+      const rawValues = axes.map((axis) => row[axis]);
+      const key = JSON.stringify(rawValues);
+      const values = rawValues.map((value) => Object.hasOwn(missingLabels,value) ? missingLabels[value] : value);
       const group = groups.get(key) || {values,count:0};
       group.count += row.count;
       groups.set(key,group);
@@ -302,7 +386,7 @@ window.P0Tasks = (() => {
     const ranked = [...groups.values()].sort((a,b) => b.count - a.count || a.values.join(' ').localeCompare(b.values.join(' ')));
     const observed = failureBreakdown.observedCount;
     el('tasks-failure-head').innerHTML = axes.map((axis) => `<th scope="col">${labels[axis]}</th>`).join('')
-      + '<th scope="col" class="text-end text-nowrap">失败单数</th><th scope="col" class="text-end text-nowrap">占比</th>';
+      + `<th scope="col" class="text-end text-nowrap">${t('失败单数','Failed tasks')}</th><th scope="col" class="text-end text-nowrap">${t('占比','Share')}</th>`;
     el('tasks-failure-rows').innerHTML = ranked.map(({values,count}) => `<tr>${values.map((value) => `<td class="text-break">${esc(value)}</td>`).join('')}<td class="text-end text-nowrap">${fmt(count)}</td><td class="text-end text-nowrap">${(count / observed * 100).toFixed(1)}%</td></tr>`).join('');
   }
 
@@ -312,29 +396,25 @@ window.P0Tasks = (() => {
     params.set('status','-1');
     const controller = failureController = new AbortController();
     failureBreakdown = null;
+    failureError = null;
     renderFailureBreakdown();
-    el('tasks-failure-summary').textContent = '正在读取失败任务明细…';
     updateActions();
     try {
       const response = await get(`/api/tasks/diagnostics?${params}`,controller.signal);
       if (failureController !== controller) return;
       const result = response.diagnostics?.failureBreakdown;
-      if (!Array.isArray(result?.rows)) throw new Error('P0 未返回失败任务分类，请稍后重试。');
+      if (!Array.isArray(result?.rows)) throw taskError('P0 未返回失败任务分类，请稍后重试。','P0 did not return a failure breakdown. Try again.');
       failureBreakdown = result;
-      const count = fmt(result.observedCount);
-      if (result.complete) {
-        el('tasks-failure-summary').textContent = result.observedCount ? `已分类 ${count} 条失败任务，按失败单数降序排列。` : '当前查询范围内没有符合条件的失败任务。';
-      } else {
-        const reported = result.expectedCount == null ? '' : `（上游总数 ${fmt(result.expectedCount)} 条）`;
-        const reason = result.requestFailed ? '明细读取中断' : result.truncated ? '已达到读取上限' : '明细尚未读全';
-        el('tasks-failure-summary').textContent = `${reason}，已读取 ${count} 条失败任务${reported}。占比按已读取记录计算，可缩短时间范围后重试。`;
-      }
-      renderFailureBreakdown();
     } catch (error) {
       if (failureController !== controller || error.name === 'AbortError') return;
-      el('tasks-failure-summary').textContent = errorText(error,'P0 失败任务分类');
+      failureError = error;
+      notifyError(error,t('P0 失败任务分类','P0 failure breakdown'));
     } finally {
-      if (failureController === controller) {failureController = null;updateActions();}
+      if (failureController === controller) {
+        failureController = null;
+        renderFailureBreakdown();
+        updateActions();
+      }
     }
   }
 
@@ -352,20 +432,30 @@ window.P0Tasks = (() => {
         }
       }
     }
-    return summary || '查看详情了解任务输入与结果';
+    return summary || t('查看详情了解任务输入与结果','View details to see inputs and results.');
   }
 
   function statusBadge(row) {
     const value = first(row,['status','task_status','taskStatus']);
     const color = String(value) === '-1' ? 'text-danger bg-danger-subtle border-danger-subtle' : String(value) === '2' ? 'text-success bg-success-subtle border-success-subtle' : 'text-body-secondary bg-body-tertiary';
-    return `<span class="badge border fw-normal ${color}">${esc(statusLabel(value === '' ? '未知' : value))}</span>`;
+    return `<span class="badge border fw-normal ${color}">${esc(statusLabel(value))}</span>`;
   }
 
   function copyableValue(value,index,field,label) {
-    return `<div class="d-flex align-items-start gap-1"><span class="tasks-full-value flex-grow-1${['taskType','hashKey','userId'].includes(field) ? ' font-monospace text-body-secondary' : ''}">${esc(value || '未提供')}</span>${value ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy flex-shrink-0" data-task-copy="${index}" data-task-copy-field="${field}" aria-label="复制 ${label}" title="复制 ${label}"><svg><use href="#i-copy"/></svg></button>` : ''}</div>`;
+    const caption = esc(t(`复制 ${label}`,`Copy ${label}`));
+    const mono = ['taskType','hashKey','userId'].includes(field) ? ' font-monospace text-body-secondary' : '';
+    const button = value ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy flex-shrink-0"
+      data-task-copy="${index}" data-task-copy-field="${field}" aria-label="${caption}" title="${caption}"><svg><use href="#i-copy"/></svg></button>` : '';
+    return `<div class="d-flex align-items-start gap-1"><span class="tasks-full-value flex-grow-1${mono}">${esc(value || t('未提供','Not provided'))}</span>${button}</div>`;
+  }
+
+  function channelName(row) {
+    const hash = channel(row);
+    return scalar(!hash && (!row.channelName || row.channelName === '未分類') ? t('未分類','Unclassified') : row.channelName || hash);
   }
 
   function renderRows() {
+    if (!pageData) return;
     const items = Array.isArray(pageData?.items) ? pageData.items : [];
     const keyword = el('tasks-keyword').value.trim().toLocaleLowerCase();
     const rows = items.map((row,index) => ({row,index})).filter(({row}) => !keyword || JSON.stringify(row).toLocaleLowerCase().includes(keyword));
@@ -373,19 +463,39 @@ window.P0Tasks = (() => {
       const id = taskId(row);
       const type = taskType(row);
       const hash = channel(row);
-      const name = scalar(row.channelName || hash || '未分類');
+      const name = channelName(row);
       const created = first(row,['created_at','createdAt','create_time','createTime','creation_time','created_time']);
       const updated = first(row,['updated_at','updatedAt','update_time','finished_at','completed_at']);
       const user = scalar(first(row,['user_id','userId','user_identifier','userIdentifier']));
-      return `<tr><td><div class="d-flex align-items-center gap-1 mb-1"><span class="font-monospace tasks-task-id tasks-clip" title="${esc(id)}">${esc(compact(id)) || '未提供任务 ID'}</span>${id ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy" data-task-copy="${index}" aria-label="复制任务 ID"><svg><use href="#i-copy"/></svg></button>` : ''}</div><span class="tasks-content text-body-secondary">${esc(contentSummary(row))}</span></td><td>${copyableValue(workflowName(row),index,'workflowName','Workflow name')}</td><td>${copyableValue(type,index,'taskType','Task type')}</td><td>${statusBadge(row)}</td><td>${name !== hash ? copyableValue(name,index,'channelName','渠道名称') : ''}${hash ? `<div${name !== hash ? ' class="mt-1"' : ''}>${copyableValue(hash,index,'hashKey','HashKey')}</div>` : ''}${user ? `<div class="mt-1"><span class="small text-body-secondary">用户标识</span>${copyableValue(user,index,'userId','用户标识')}</div>` : ''}</td><td><span class="d-block text-nowrap">${esc(displayTime(created))}</span>${updated ? `<span class="d-block text-body-secondary mt-1 text-nowrap" title="更新时间">更新 ${esc(displayTime(updated))}</span>` : '<span class="text-body-secondary small">创建时间</span>'}</td><td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-task-detail="${index}">查看</button></td></tr>`;
+      const copyId = id ? `<button type="button" class="btn btn-link text-body-secondary tasks-copy"
+        data-task-copy="${index}" aria-label="${t('复制任务 ID','Copy task ID')}"><svg><use href="#i-copy"/></svg></button>` : '';
+      const nameCell = name !== hash ? copyableValue(name,index,'channelName',t('渠道名称','channel name')) : '';
+      const hashCell = hash ? `<div${name !== hash ? ' class="mt-1"' : ''}>${copyableValue(hash,index,'hashKey','HashKey')}</div>` : '';
+      const userLabel = t('用户标识','User ID');
+      const userCell = user ? `<div class="mt-1"><span class="small text-body-secondary">${userLabel}</span>${copyableValue(user,index,'userId',userLabel)}</div>` : '';
+      const updatedCell = updated
+        ? `<span class="d-block text-body-secondary mt-1 text-nowrap" title="${t('更新时间','Updated time')}">${t('更新','Updated')} ${esc(displayTime(updated))}</span>`
+        : `<span class="text-body-secondary small">${t('创建时间','Created time')}</span>`;
+      return `<tr><td><div class="d-flex align-items-center gap-1 mb-1"><span class="font-monospace tasks-task-id tasks-clip" title="${esc(id)}">${esc(compact(id)) || t('未提供任务 ID','No task ID')}</span>${copyId}</div>
+        <span class="tasks-content text-body-secondary">${esc(contentSummary(row))}</span></td>
+        <td>${copyableValue(workflowName(row),index,'workflowName',t('工作流名称','workflow name'))}</td>
+        <td>${copyableValue(type,index,'taskType',t('任务类型','task type'))}</td><td>${statusBadge(row)}</td>
+        <td>${nameCell}${hashCell}${userCell}</td><td><span class="d-block text-nowrap">${esc(displayTime(created))}</span>${updatedCell}</td>
+        <td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-task-detail="${index}">${t('查看','View')}</button></td></tr>`;
     }).join('');
     el('tasks-empty').classList.toggle('hidden',rows.length > 0);
-    el('tasks-empty').querySelector('p').textContent = keyword ? '当前页没有匹配的任务，请修改关键词或查看其他页。' : '该条件下暂无任务，可调整时间或状态。';
-    el('tasks-result-count').textContent = pageData?.total != null ? `${fmt(pageData.total)} 条` : `本页 ${fmt(items.length)} 条`;
+    el('tasks-empty').querySelector('p').textContent = keyword
+      ? t('当前页没有匹配的任务，请修改关键词或查看其他页。','No matching tasks on this page. Change the keyword or check other pages.')
+      : t('该条件下暂无任务，可调整时间或状态。','No tasks match. Change the time range or status.');
+    el('tasks-result-count').textContent = pageData.total != null ? t(`${fmt(pageData.total)} 条`,`${fmt(pageData.total)} total`)
+      : t(`本页 ${fmt(items.length)} 条`,`${fmt(items.length)} on this page`);
     const page = applied?.page || 1;
     const totalPages = pageData?.total != null ? Math.max(1,Math.ceil(pageData.total/(pageData.pageSize || applied.page_size))) : null;
-    const totalLabel = pageData?.total != null ? `共 ${fmt(pageData.total)} 条` : '总数未提供';
-    el('tasks-page-info').textContent = `${totalLabel} · 第 ${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`} 页 · 本页 ${fmt(items.length)} 条${keyword ? ` · 匹配 ${fmt(rows.length)} 条` : ''}`;
+    const totalLabel = pageData.total != null ? t(`共 ${fmt(pageData.total)} 条`,`${fmt(pageData.total)} total`) : t('总数未提供','Total unavailable');
+    const pages = `${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`}`;
+    const parts = [totalLabel,t(`第 ${pages} 页`,`Page ${pages}`),t(`本页 ${fmt(items.length)} 条`,`${fmt(items.length)} on this page`)];
+    if (keyword) parts.push(t(`匹配 ${fmt(rows.length)} 条`,`${fmt(rows.length)} matched`));
+    el('tasks-page-info').textContent = parts.join(' · ');
     updateActions();
   }
 
@@ -398,60 +508,53 @@ window.P0Tasks = (() => {
     return esc(text || '—');
   }
 
-  function renderDetail(row, prefix, english=false) {
+  function renderDetail(row, prefix) {
     const status = first(row,['status','task_status','taskStatus']);
-    const lookup = prefix === 'task-lookup';
     const fields = [
       ['任务 ID','Task ID',taskId(row)],['记录 UUID','Record UUID',row.uuid],
-      [lookup ? '工作流名称' : 'Workflow name','Workflow name',workflowName(row)],
-      [lookup ? '任务类型' : 'Task type','Task type',taskType(row)],
-      ['状态','Status',statusLabel(status,english)],['错误码','Error code',first(row,['error_code','errorCode'])],
-      ['场景','Scene',first(row,['scene_name','sceneName'])],['渠道','Channel',english && !channel(row) ? 'Unclassified' : row.channelName || '未分類'],
+      ['工作流名称','Workflow name',workflowName(row)],['任务类型','Task type',taskType(row)],
+      ['状态','Status',statusLabel(status)],['错误码','Error code',first(row,['error_code','errorCode'])],
+      ['场景','Scene',first(row,['scene_name','sceneName'])],['渠道','Channel',channelName(row)],
       ['HashKey','HashKey',channel(row)],['用户标识','User ID',first(row,['user_id','userId','user_identifier'])],
       ['创建时间','Created',displayTime(first(row,['created_at','createdAt','create_time']))],
       ['更新时间','Updated',displayTime(first(row,['updated_at','updatedAt','update_time']))],
       ['ComfyUI 地址','ComfyUI URL',first(row,['comfyui_url','comfyui_address','comfyuiUrl','comfyuiAddress','comfyui'])],
       ['上游 fee','Upstream fee',row.fee]
     ];
-    el(`${prefix}-meta`).innerHTML = fields.filter(([,,value]) => value !== '' && value != null).map(([zh,en,value]) => `<dt class="col-sm-2">${esc(english ? en : zh)}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
+    el(`${prefix}-meta`).innerHTML = fields.filter(([,,value]) => value !== '' && value != null).map(([zh,en,value]) => `<dt class="col-sm-2">${esc(t(zh,en))}</dt><dd class="col-sm-4">${linkValue(value)}</dd>`).join('');
     el(`${prefix}-json`).textContent = JSON.stringify(row,null,2);
   }
 
   function showDetail(index) {
-    const row = pageData?.items?.[index];
-    if (!row) return;
-    renderDetail(row,'tasks-detail');
+    detailRow = pageData?.items?.[index];
+    if (!detailRow) return;
+    renderDetail(detailRow,'tasks-detail');
     bootstrap.Modal.getOrCreateInstance(el('tasks-detail-dialog')).show();
   }
 
   function lookupMessage(key) {
     lookupMessageKey = key;
     const output = el('task-lookup-message');
-    output.textContent = lookupLanguages[lookupLanguage][key] || '';
+    output.textContent = lookupLanguages[locale()][key] || '';
     output.dataset.state = ['invalid','unauthorized','forbidden','failed'].includes(key) ? 'error' : '';
     output.classList.toggle('visually-hidden',key === 'found' || key === 'searching');
     output.classList.toggle('hidden',!key);
   }
 
-  function lookupIdentifier() {
-    return el('task-lookup-kind').value === 'uuid' ? 'UUID' : lookupLanguages[lookupLanguage].taskId;
+  function lookupMode() {
+    return el('task-lookup-mode-uuid').checked ? 'uuid' : 'task_id';
   }
 
-  function updateLookupTitle() {
-    document.title = location.hash === '#task-lookup' ? `${lookupLanguages[lookupLanguage].title} · AIAPI` : appTitle;
+  function lookupIdentifier() {
+    return lookupMode() === 'uuid' ? 'UUID' : lookupLanguages[locale()].taskId;
   }
 
   function renderLookupLanguage() {
-    const labels = lookupLanguages[lookupLanguage];
-    const kind = el('task-lookup-kind');
-    el('view-task-lookup').lang = lookupLanguage;
-    el('task-lookup-language').setAttribute('aria-label',labels.language);
-    el('task-lookup-lang-zh').setAttribute('aria-pressed',String(lookupLanguage === 'zh-CN'));
-    el('task-lookup-lang-en').setAttribute('aria-pressed',String(lookupLanguage === 'en'));
-    el('task-lookup-home').textContent = labels.home;
+    const labels = lookupLanguages[locale()];
+    el('view-task-lookup').lang = locale();
     el('task-lookup-title').textContent = labels.title;
     el('task-lookup-kind-label').textContent = labels.identifier;
-    kind.querySelector('[value="task_id"]').textContent = labels.taskId;
+    el('task-lookup-mode-id-label').textContent = labels.taskId;
     el('task-lookup-label').textContent = lookupIdentifier();
     const input = el('task-lookup-value');
     input.placeholder = labels.placeholder(lookupIdentifier());
@@ -461,14 +564,7 @@ window.P0Tasks = (() => {
     el('task-lookup-json-title').textContent = labels.json;
     el('task-lookup-copy').textContent = labels.copy;
     lookupMessage(lookupMessageKey);
-    if (lookupResult) renderDetail(lookupResult,'task-lookup',lookupLanguage === 'en');
-    updateLookupTitle();
-  }
-
-  function setLookupLanguage(language) {
-    lookupLanguage = language;
-    try {localStorage.setItem('p0-lookup-language',language);} catch { /* The current page still uses this language. */ }
-    renderLookupLanguage();
+    if (lookupResult) renderDetail(lookupResult,'task-lookup');
   }
 
   function clearLookup() {
@@ -484,19 +580,20 @@ window.P0Tasks = (() => {
     event.preventDefault();
     if (lookupController) return;
     const kind = el('task-lookup-kind');
+    const mode = lookupMode();
     const input = el('task-lookup-value');
-    const value = kind.value === 'uuid' ? input.value.trim() : input.value;
+    const value = mode === 'uuid' ? input.value.trim() : input.value;
     if (!value.trim()) {
-      input.setCustomValidity(lookupLanguages[lookupLanguage].missing(lookupIdentifier()));
+      input.setCustomValidity(lookupLanguages[locale()].missing(lookupIdentifier()));
       input.reportValidity();
       return;
     }
     const controller = lookupController = new AbortController();
     const button = el('task-lookup-submit');
-    const payload = {[kind.value]:value};
+    const payload = {[mode]:value};
     clearLookup();
     kind.disabled = input.disabled = button.disabled = true;
-    button.textContent = lookupLanguages[lookupLanguage].searching;
+    button.textContent = lookupLanguages[locale()].searching;
     lookupMessage('searching');
     try {
       const {task} = await api('/api/tasks/lookup',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
@@ -510,7 +607,7 @@ window.P0Tasks = (() => {
         return;
       }
       lookupResult = task;
-      renderDetail(task,'task-lookup',lookupLanguage === 'en');
+      renderDetail(task,'task-lookup');
       el('task-lookup-result').classList.remove('hidden');
       lookupMessage('found');
     } catch (error) {
@@ -523,7 +620,7 @@ window.P0Tasks = (() => {
     } finally {
       lookupController = null;
       kind.disabled = input.disabled = button.disabled = false;
-      button.textContent = lookupLanguages[lookupLanguage].search;
+      button.textContent = lookupLanguages[locale()].search;
     }
   }
 
@@ -531,16 +628,18 @@ window.P0Tasks = (() => {
     const data = el(`${prefix}-json`).textContent;
     if (!data) return;
     const lookup = prefix === 'task-lookup';
-    try {await copyText(data);toast(lookup ? lookupLanguages[lookupLanguage].copied : '任务数据已复制。');}
+    try {await copyText(data);toast(lookup ? lookupLanguages[locale()].copied : t('任务数据已复制。','Task data copied.'));}
     catch(error) {
-      if (lookup) toast(lookupLanguages[lookupLanguage].copyFailed,true);
-      else errorText(error,'复制任务详情');
+      if (lookup) toast(lookupLanguages[locale()].copyFailed,true);
+      else notifyError(error,t('复制任务详情','Copy task details'));
     }
   }
 
   function exportPage() {
     if (!pageData?.items?.length) return;
-    const rows = [['任务ID','UUID','Task type','Workflow name','状态','HashKey','渠道','创建时间','完整数据'],...pageData.items.map((row) => [taskId(row),row.uuid,taskType(row),workflowName(row),first(row,['status','task_status']),channel(row),row.channelName,first(row,['created_at','createdAt','create_time']),JSON.stringify(row)])];
+    const headings = [t('任务 ID','Task ID'),'UUID',t('任务类型','Task type'),t('工作流名称','Workflow name'),
+      t('状态','Status'),'HashKey',t('渠道','Channel'),t('创建时间','Created'),t('完整数据','Raw JSON')];
+    const rows = [headings,...pageData.items.map((row) => [taskId(row),row.uuid,taskType(row),workflowName(row),first(row,['status','task_status']),channel(row),row.channelName,first(row,['created_at','createdAt','create_time']),JSON.stringify(row)])];
     const cell = (value) => {
       const text = scalar(value);
       return `"${(/^[=+\-@\t\r]/.test(text) ? "'" + text : text).replace(/"/g,'""')}"`;
@@ -552,6 +651,48 @@ window.P0Tasks = (() => {
     anchor.click();setTimeout(() => URL.revokeObjectURL(url),1000);
   }
 
+  function renderAiScope() {
+    const note = aiDisplay?.result?.analysisNote;
+    let text = t('先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。','Enable AI and set a model key in Settings → AI summaries.');
+    if (note) text = english() ? englishAnalysisNote(note) : note;
+    else if (statistics?.complete === false) text = t('部分状态统计尚未完成，补齐后自动生成 AI 简报。','The AI brief starts after all status counts are available.');
+    else if (config?.llmEnabled && config?.llmApiKeyConfigured) {
+      text = t('查询后自动分析未成功任务、工作流与渠道集中情况，并给出排查重点。',
+        'After search, AI reviews non-success tasks and concentrations by workflow or channel, then suggests what to investigate.');
+    }
+    el('tasks-ai-scope').textContent = text;
+  }
+
+  function englishAnalysisNote(note) {
+    const records = note.match(/^已(?:核对|读取) (\d+) 条/)?.[1];
+    if (note.startsWith('诊断取数时未发现')) return 'No non-success tasks were found during the review. Refresh for the latest status.';
+    if (records == null) return 'The brief uses status counts because task details could not be fully loaded.';
+    const text = note.startsWith('已核对') ? `Reviewed ${fmt(records)} non-success tasks by age, update time, workflow, and channel.`
+      : `Reviewed a sample of ${fmt(records)} non-success tasks. The brief reflects only the records read.`;
+    return note.includes('两次取数间发生变化') ? `${text} Statuses changed between requests, so read the details and counts separately.` : text;
+  }
+
+  function renderAi() {
+    const output = el('tasks-ai-output');
+    output.classList.toggle('hidden',!aiDisplay);
+    if (!aiDisplay) return;
+    if (aiDisplay.state === 'cancelled') {
+      output.textContent = t('已取消 AI 简报，任务查询和统计可以继续使用。','AI brief canceled. Task search and counts are still available.');
+    } else if (aiDisplay.progress) {
+      const elapsed = Math.floor(aiDisplay.progress.elapsedSeconds || 0);
+      const remaining = Math.ceil(aiDisplay.progress.remainingSeconds);
+      output.textContent = t(`正在分析任务并生成简报，已等待 ${elapsed} 秒，剩余最多 ${remaining} 秒…`,
+        `Generating the task brief… ${elapsed}s elapsed, up to ${remaining}s left.`);
+    } else if (aiDisplay.result) {
+      const {aiStatus,aiText,aiMessage} = aiDisplay.result;
+      output.textContent = aiStatus === 'ok' && aiText ? aiText
+        : (aiMessage && !english() ? aiMessage : t('AI 暂不可用，任务统计已保留。','The AI brief is unavailable. Task counts are still available.'));
+    } else if (aiDisplay.error) {
+      const message = errorText(aiDisplay.error);
+      output.textContent = t(`简报未生成：${message}`,`Could not generate the brief. ${message}`);
+    }
+  }
+
   async function generateAi() {
     if (!statistics || statistics.complete === false || statsBusy || aiController || !config?.llmEnabled || !config?.llmApiKeyConfigured) return;
     const captured = statistics;
@@ -560,21 +701,27 @@ window.P0Tasks = (() => {
     const timeoutSeconds = Number(el('tasks-ai-timeout').value);
     el('tasks-ai-timeout').disabled = true;
     el('tasks-ai-cancel').classList.remove('hidden');
-    el('tasks-ai-output').classList.remove('hidden');
-    el('tasks-ai-output').textContent = `正在分析任务并生成简报，最多等待 ${timeoutSeconds} 秒…`;
+    aiDisplay = {progress:{elapsedSeconds:0,remainingSeconds:timeoutSeconds}};
+    renderAiScope();
+    renderAi();
     updateActions();
     try {
       const result = await runAiTask({kind:'tasks',statistics:captured},{timeoutSeconds,signal:aiController.signal,onProgress:(progress) => {
         if (sequence !== aiSequence) return;
-        if (typeof progress === 'string') el('tasks-ai-output').textContent = progress;
-        else if (progress && Number.isFinite(progress.remainingSeconds)) el('tasks-ai-output').textContent = `正在分析任务并生成简报，已等待 ${Math.floor(progress.elapsedSeconds || 0)} 秒，剩余最多 ${Math.ceil(progress.remainingSeconds)} 秒…`;
+        if (progress && Number.isFinite(progress.remainingSeconds)) {
+          aiDisplay = {progress};
+          renderAi();
+        }
       }});
       if (sequence !== aiSequence || captured !== statistics) return;
-      el('tasks-ai-output').textContent = result.aiStatus === 'ok' ? result.aiText || result.aiMessage : result.aiMessage || 'AI 暂不可用，任务统计已保留。';
-      if (result.analysisNote) el('tasks-ai-scope').textContent = result.analysisNote;
+      aiDisplay = {result};
+      renderAiScope();
+      renderAi();
     } catch (error) {
       if (sequence !== aiSequence || error.name === 'AbortError') return;
-      el('tasks-ai-output').textContent = `简报未生成：${errorText(error,'P0 AI 任务简报')}`;
+      aiDisplay = {error};
+      notifyError(error,t('P0 AI 任务简报','P0 AI brief'));
+      renderAi();
     } finally {
       if (sequence === aiSequence) {
         aiController = null;el('tasks-ai-timeout').disabled=false;el('tasks-ai-cancel').classList.add('hidden');updateActions();
@@ -591,25 +738,21 @@ window.P0Tasks = (() => {
     if (firstConfig || changed) {
       if (!firstConfig) {lookupController?.abort();clearLookup();}
       listController?.abort();statsController?.abort();listSequence++;statsSequence++;stopAi();
-      applied=null;pageData=null;statistics=null;listBusy=false;statsBusy=false;
+      applied=null;queryChanged=false;pageData=null;listError=null;statistics=null;statsQuery=null;statsError=null;
+      listBusy=false;statsBusy=false;aiDisplay=null;
       resetFailureBreakdown();
       if (firstConfig || previousConfig?.timezone !== config.timezone) setRange('today');
-      renderStats();
-      el('tasks-rows').innerHTML='';el('tasks-result-count').textContent='待查询';el('tasks-page-info').textContent='—';
-      el('tasks-applied').textContent='查询后显示任务信息。';
-      el('tasks-empty').classList.remove('hidden');el('tasks-empty').querySelector('p').textContent='配置已更新，请重新查询任务。';
-      el('tasks-stats-caption').textContent='时间段统计 · 全部状态';
-      el('tasks-ai-output').classList.add('hidden');
+      renderListState();
+      renderAi();
     }
     if (!aiController) {
       const timeout = String(config.llmTimeoutSeconds || 120);
       if (![...el('tasks-ai-timeout').options].some((option) => option.value === timeout)) {
-        const option = new Option(`最多 ${timeout} 秒`,timeout);el('tasks-ai-timeout').add(option);
+        el('tasks-ai-timeout').add(new Option(timeoutOptionLabel(timeout),timeout));
       }
       el('tasks-ai-timeout').value = timeout;
     }
-    el('tasks-ai-scope').textContent = config.llmEnabled && config.llmApiKeyConfigured ? '查询后自动分析未成功任务、工作流与渠道集中情况，并给出排查重点。' : '先在「配置 → AI 数据总结」启用 AI 并设置模型密钥。';
-    updateActions();
+    renderStats();
     if (location.hash === '#tasks' && !applied) activate();
   }
 
@@ -619,6 +762,20 @@ window.P0Tasks = (() => {
       return;
     }
     if (!applied) search();
+  }
+
+  function timeoutOptionLabel(seconds) {
+    return t(`最多 ${seconds} 秒`,`Up to ${seconds}s`);
+  }
+
+  function renderLanguage() {
+    renderLookupLanguage();
+    for (const option of el('tasks-ai-timeout').options) option.textContent = timeoutOptionLabel(option.value);
+    renderListState();
+    renderStats();
+    renderFailureBreakdown();
+    renderAi();
+    if (detailRow) renderDetail(detailRow,'tasks-detail');
   }
 
   el('tasks-filter').addEventListener('submit',(event) => {event.preventDefault();search();});
@@ -641,15 +798,18 @@ window.P0Tasks = (() => {
       const row = pageData?.items?.[Number(button.dataset.taskCopy)];
       if (!row) return;
       const field = button.dataset.taskCopyField || 'taskId';
-      const values = {taskId:[taskId(row),'任务 ID'],workflowName:[workflowName(row),'Workflow name'],taskType:[taskType(row),'Task type'],channelName:[scalar(row.channelName || channel(row) || '未分類'),'渠道名称'],hashKey:[channel(row),'HashKey'],userId:[scalar(first(row,['user_id','userId','user_identifier','userIdentifier'])),'用户标识']};
+      const values = {taskId:[taskId(row),t('任务 ID','Task ID')],workflowName:[workflowName(row),t('工作流名称','Workflow name')],
+        taskType:[taskType(row),t('任务类型','Task type')],channelName:[channelName(row),t('渠道名称','Channel name')],
+        hashKey:[channel(row),'HashKey'],userId:[scalar(first(row,['user_id','userId','user_identifier','userIdentifier'])),t('用户标识','User ID')]};
       if (!Object.hasOwn(values,field)) return;
       const [value,label] = values[field];
       if (!value) return;
-      try {await copyText(value);toast(`${label} 已复制。`);}
-      catch(error) {errorText(error,`复制 ${label}`);}
+      try {await copyText(value);toast(t(`${label} 已复制。`,`${label} copied.`));}
+      catch(error) {notifyError(error,t(`复制 ${label}`,`Copy ${label}`));}
     }
   });
   el('tasks-copy-detail').addEventListener('click',() => copyDetail('tasks-detail'));
+  el('tasks-detail-dialog').addEventListener('hidden.bs.modal',() => {detailRow = null;});
   el('task-lookup-form').addEventListener('submit',lookupTask);
   el('task-lookup-kind').addEventListener('change',() => {
     clearLookup();
@@ -657,13 +817,11 @@ window.P0Tasks = (() => {
   });
   el('task-lookup-value').addEventListener('input',clearLookup);
   el('task-lookup-value').addEventListener('invalid',(event) => {
-    if (event.target.validity.valueMissing) event.target.setCustomValidity(lookupLanguages[lookupLanguage].missing(lookupIdentifier()));
+    if (event.target.validity.valueMissing) event.target.setCustomValidity(lookupLanguages[locale()].missing(lookupIdentifier()));
   });
-  el('task-lookup-lang-zh').addEventListener('click',() => setLookupLanguage('zh-CN'));
-  el('task-lookup-lang-en').addEventListener('click',() => setLookupLanguage('en'));
   el('task-lookup-copy').addEventListener('click',() => copyDetail('task-lookup'));
-  window.addEventListener('hashchange',updateLookupTitle);
-  renderLookupLanguage();
+  window.addEventListener('app-language-change',renderLanguage);
+  renderLanguage();
   el('tasks-export').addEventListener('click',exportPage);
   el('tasks-ai-generate').addEventListener('click',generateAi);
   el('tasks-ai-cancel').addEventListener('click',() => stopAi(true));

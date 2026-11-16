@@ -127,6 +127,12 @@ class WebServerTest {
         assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
         assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(""));
         assertTrue(response.body().toLowerCase().contains("<!doctype html>"));
+
+        assertTrue(response.body().indexOf("/language.js") >= 0);
+        assertTrue(response.body().indexOf("/language.js") < response.body().indexOf("/app.js"));
+        HttpResponse<String> language = send(request("/language.js").GET());
+        assertEquals(200, language.statusCode());
+        assertTrue(language.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"));
     }
 
     @Test
