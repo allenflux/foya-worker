@@ -9,6 +9,9 @@ window.P0Tasks = (() => {
   const locale = () => window.AppLanguage.locale();
   const english = () => locale() === 'en';
   const codes = ['0','1','2','3','-1'];
+  const rollingRangeDays = {'24h':1,'7d':7,'30d':30};
+  // Leave time to receive the response after the server's six-minute range query deadline.
+  const rangeRequestTimeoutMs = 375000;
   const aiTimeoutOptions = new Set([30,60,120,180,300]);
   const lookupLanguages = {
     'zh-CN': {
@@ -100,8 +103,8 @@ window.P0Tasks = (() => {
       previous.setUTCDate(previous.getUTCDate() - 1);
       start = `${previous.toISOString().slice(0,10)}T00:00:00`;
       until = `${start.slice(0,10)}T23:59:59`;
-    } else if (kind === '24h' || kind === '7d') {
-      start = nowLocal(new Date(now.getTime() - (kind === '7d' ? 7 : 1) * 86400000));
+    } else if (Object.hasOwn(rollingRangeDays,kind)) {
+      start = nowLocal(new Date(now.getTime() - rollingRangeDays[kind] * 86400000));
     }
     el('tasks-start').value = start;
     el('tasks-end').value = until;
@@ -233,6 +236,7 @@ window.P0Tasks = (() => {
       button.classList.toggle('active',button.dataset.taskStatus === (applied?.status ?? ''));
       button.setAttribute('aria-pressed',String(button.dataset.taskStatus === (applied?.status ?? '')));
     });
+    if (pageData && pageData.total == null) renderPageCounts();
     renderStatsCaption();
     updateActions();
   }
@@ -250,7 +254,9 @@ window.P0Tasks = (() => {
       parts.push(config?.timezone || statistics.timezone);
       caption = parts.filter(Boolean).join(' · ');
     } else if (statsError) caption = t(`统计未完成：${errorText(statsError)}`,`Could not count tasks. ${errorText(statsError)}`);
-    else if (statsBusy) caption = t('正在统计完整时间段…','Counting tasks across the time range…');
+    else if (statsBusy) caption = statsQuery.start_time.slice(0,10) === statsQuery.end_time.slice(0,10)
+      ? t('正在统计完整时间段…','Counting tasks across the time range…')
+      : t('正在统计，超过 24 小时的范围会按天汇总…','Counting tasks. Ranges over 24 hours are counted in daily segments…');
     el('tasks-stats-caption').textContent = caption;
     el('tasks-stats-retry').classList.toggle('hidden',!statsError && statistics?.complete !== false && statistics?.consistent !== false);
     renderAiScope();
@@ -269,7 +275,7 @@ window.P0Tasks = (() => {
     renderAi();
     renderStats();
     try {
-      const response = await get(`/api/tasks/statistics?${queryParams(query,true)}`,statsController.signal);
+      const response = await api(`/api/tasks/statistics?${queryParams(query,true)}`,{signal:statsController.signal,timeoutMs:rangeRequestTimeoutMs});
       if (sequence !== statsSequence) return;
       statistics = response;
     } catch (error) {
@@ -297,7 +303,7 @@ window.P0Tasks = (() => {
     renderListState();
     renderStats();
     try {
-      const response = await get(`/api/tasks?${queryParams(query)}`,listController.signal);
+      const response = await api(`/api/tasks?${queryParams(query)}`,{signal:listController.signal,timeoutMs:rangeRequestTimeoutMs});
       if (sequence !== listSequence) return;
       pageData = response;
       if (Number.isInteger(response.pageSize) && response.pageSize > 0) applied.page_size = response.pageSize;
@@ -495,16 +501,29 @@ window.P0Tasks = (() => {
     el('tasks-empty').querySelector('p').textContent = keyword
       ? t('当前页没有匹配的任务，请修改关键词或查看其他页。','No matching tasks on this page. Change the keyword or check other pages.')
       : t('该条件下暂无任务，可调整时间或状态。','No tasks match. Change the time range or status.');
-    el('tasks-result-count').textContent = pageData.total != null ? t(`${fmt(pageData.total)} 条`,`${fmt(pageData.total)} total`)
-      : t(`本页 ${fmt(items.length)} 条`,`${fmt(items.length)} on this page`);
-    const page = applied?.page || 1;
-    const totalPages = pageData?.total != null ? Math.max(1,Math.ceil(pageData.total/(pageData.pageSize || applied.page_size))) : null;
-    const totalLabel = pageData.total != null ? t(`共 ${fmt(pageData.total)} 条`,`${fmt(pageData.total)} total`) : t('总数未提供','Total unavailable');
-    const pages = `${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`}`;
-    const parts = [totalLabel,t(`第 ${pages} 页`,`Page ${pages}`),t(`本页 ${fmt(items.length)} 条`,`${fmt(items.length)} on this page`)];
-    if (keyword) parts.push(t(`匹配 ${fmt(rows.length)} 条`,`${fmt(rows.length)} matched`));
-    el('tasks-page-info').textContent = parts.join(' · ');
+    renderPageCounts();
     updateActions();
+  }
+
+  function renderPageCounts() {
+    const itemCount = pageData.items?.length || 0;
+    let total = pageData.total;
+    if (total == null && statistics?.complete && statsQuery &&
+        queryParams(statsQuery,true).toString() === queryParams(applied,true).toString()) {
+      total = applied.status === '' ? statistics.total : statistics.counts?.[applied.status];
+    }
+    el('tasks-result-count').textContent = total != null ? t(`${fmt(total)} 条`,`${fmt(total)} total`)
+      : t(`本页 ${fmt(itemCount)} 条`,`${fmt(itemCount)} on this page`);
+    const page = applied?.page || 1;
+    const totalPages = total != null ? Math.max(1,Math.ceil(total/(pageData.pageSize || applied.page_size))) : null;
+    const totalLabel = total != null ? t(`共 ${fmt(total)} 条`,`${fmt(total)} total`) : t('总数未提供','Total unavailable');
+    const pages = `${page}${totalPages == null ? '' : ` / ${fmt(totalPages)}`}`;
+    const parts = [totalLabel,t(`第 ${pages} 页`,`Page ${pages}`),t(`本页 ${fmt(itemCount)} 条`,`${fmt(itemCount)} on this page`)];
+    if (el('tasks-keyword').value.trim()) {
+      const matches = el('tasks-rows').childElementCount;
+      parts.push(t(`匹配 ${fmt(matches)} 条`,`${fmt(matches)} matched`));
+    }
+    el('tasks-page-info').textContent = parts.join(' · ');
   }
 
   function linkValue(value) {

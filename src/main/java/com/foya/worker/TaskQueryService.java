@@ -19,23 +19,57 @@ import java.util.regex.Pattern;
 /** Interactive, read-only P0 queries; its deadline and retries are independent of batch pulls. */
 public final class TaskQueryService {
     static final List<Integer> STATUSES = List.of(-1, 0, 1, 2, 3);
+    private static final URI P0_LIST_ENDPOINT = URI.create("https://p0-function.inaiai.com/api/tasks/list");
     private static final URI P0_PUBLIC_ORIGIN = URI.create("https://p0-api.inaiai.com/");
     private static final Pattern SENSITIVE_FIELD = Pattern.compile(".*(apikey|api_key|token|authorization|password|secret|credential|cookie).*", Pattern.CASE_INSENSITIVE);
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
             .followRedirects(HttpClient.Redirect.NEVER).build();
     private final Duration budget;
+    private final Duration longRangeBudget;
+    private static final int RANGE_PARALLELISM = 4;
+    private final Semaphore rangeCountSlots = new Semaphore(RANGE_PARALLELISM, true);
     private final String uuidApiKey;
     private final URI uuidApiOrigin;
 
-    public TaskQueryService() { this(Duration.ofSeconds(20)); }
+    public TaskQueryService() {
+        this(Duration.ofSeconds(20), Duration.ofMinutes(6), System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN);
+    }
     TaskQueryService(Duration budget) { this(budget, System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN); }
     TaskQueryService(Duration budget, String uuidApiKey, URI uuidApiOrigin) {
+        this(budget, budget, uuidApiKey, uuidApiOrigin);
+    }
+    private TaskQueryService(Duration budget, Duration longRangeBudget, String uuidApiKey, URI uuidApiOrigin) {
         this.budget = budget;
+        this.longRangeBudget = longRangeBudget;
         this.uuidApiKey = Objects.toString(uuidApiKey, "").strip();
         this.uuidApiOrigin = uuidApiOrigin;
     }
 
     record Window(ZonedDateTime start, ZonedDateTime end, Map<String, String> filters) {}
+
+    private static boolean longRange(Window window) {
+        return window.end().isAfter(window.start().plusHours(24));
+    }
+
+    long rangeDeadline(Window window) {
+        return System.nanoTime() + (longRange(window) ? longRangeBudget : budget).toNanos();
+    }
+
+    static List<Window> dayWindows(Window window) {
+        if (!longRange(window)) return List.of(window);
+        List<Window> parts = new ArrayList<>();
+        ZonedDateTime start = window.start();
+        // Inclusive microsecond ends also serialize to the last Unix millisecond
+        // or second before midnight when the compatible source uses those units.
+        while (true) {
+            ZonedDateTime next = start.toLocalDate().plusDays(1).atStartOfDay(start.getZone());
+            if (next.isAfter(window.end())) break;
+            parts.add(new Window(start, next.minusNanos(1_000), window.filters()));
+            start = next;
+        }
+        parts.add(new Window(start, window.end(), window.filters()));
+        return parts;
+    }
     record Page(List<JsonNode> rows, Long total, Boolean hasMore, int pageSize) {}
     static final class TaskNotFoundException extends IOException {
         TaskNotFoundException() { super("未找到匹配的 P0 任务。"); }
@@ -64,13 +98,17 @@ public final class TaskQueryService {
     }
 
     public Map<String, Object> list(AppConfig config, Map<String, String> params) throws Exception {
-        long deadline = System.nanoTime() + budget.toNanos();
         Window window = window(config, params);
+        long deadline = rangeDeadline(window);
         Integer status = status(params.get("status"));
         int page = integer(params.get("page"), 1, 1, 100_000, "页码");
         int pageSize = integer(params.get("page_size"), 50, 1, 200, "每页条数");
         String apiKey = P0Client.resolveApiKey(config);
-        Page result = request(config, apiKey, window, status, page, pageSize, deadline);
+        // P0 orders by created_at and _id descending. Compatible endpoints can use a different order.
+        Page result = P0_LIST_ENDPOINT.equals(URI.create(config.p0Endpoint))
+                && longRange(window)
+                ? listRecentFirst(config, apiKey, window, status, page, pageSize, deadline)
+                : request(config, apiKey, window, status, page, pageSize, deadline);
         long endOffset = (long) (page - 1) * result.pageSize() + result.rows().size();
         if (result.total() != null && (Boolean.FALSE.equals(result.hasMore()) && endOffset < result.total()
                 || Boolean.TRUE.equals(result.hasMore()) && endOffset >= result.total()))
@@ -85,6 +123,47 @@ public final class TaskQueryService {
         response.put("hasMore", result.hasMore() != null ? result.hasMore()
                 : result.total() != null ? (long) (page - 1) * result.pageSize() + rows.size() < result.total() : !rows.isEmpty());
         return response;
+    }
+
+    Page listRecentFirst(AppConfig config, String key, Window window, Integer status,
+                         int page, int pageSize, long deadline) throws Exception {
+        var windows = dayWindows(window);
+        List<JsonNode> rows = new ArrayList<>(pageSize);
+        Set<String> seen = new HashSet<>();
+        long startOffset = (long) (page - 1) * pageSize;
+        long endOffset = startOffset + pageSize;
+        long counted = 0;
+        for (int i = windows.size() - 1; i >= 0; i--) {
+            Window current = windows.get(i);
+            Page first = request(config, key, current, status, 1, pageSize, deadline);
+            if (first.total() == null) throw new IOException("P0 分段列表缺少分页总数，无法定位任务。");
+            long before = counted;
+            counted = Math.addExact(counted, first.total());
+            long localStart = Math.max(0, startOffset - before);
+            long localEnd = Math.min(first.total(), endOffset - before);
+            int size = first.pageSize();
+            while (localStart < localEnd) {
+                int localPage = Math.toIntExact(localStart / size + 1);
+                Page part = localPage == 1 ? first : request(config, key, current, status, localPage, size, deadline);
+                long partOffset = (long) (localPage - 1) * size;
+                int expected = (int) Math.min(size, first.total() - partOffset);
+                if (!first.total().equals(part.total()) || size != part.pageSize() || part.rows().size() != expected
+                        || part.hasMore() != null && part.hasMore() != (partOffset + expected < first.total()))
+                    throw new IOException("P0 分段分页数据不一致，请重新查询。");
+                int from = (int) (localStart - partOffset);
+                int to = (int) Math.min(expected, localEnd - partOffset);
+                for (JsonNode row : part.rows().subList(from, to)) {
+                    String id = text(row, "uuid", "id");
+                    if (!id.isBlank() && !seen.add(id)) throw new IOException("P0 分段分页出现重复任务，请重新查询。");
+                    rows.add(row);
+                }
+                localStart = partOffset + to;
+            }
+            // A full last page may be followed only by empty days. Check until we find
+            // another row or exhaust the range before offering a next page.
+            if (counted > endOffset && i > 0) return new Page(rows, null, true, pageSize);
+        }
+        return new Page(rows, counted, counted > endOffset, pageSize);
     }
 
     public Map<String, Object> lookup(AppConfig config, JsonNode input) throws Exception {
@@ -158,29 +237,48 @@ public final class TaskQueryService {
     }
 
     public Map<String, Object> statistics(AppConfig config, Map<String, String> params) throws Exception {
-        long deadline = System.nanoTime() + budget.toNanos();
         Window window = window(config, params);
+        long deadline = rangeDeadline(window);
         String apiKey = P0Client.resolveApiKey(config);
-        Map<Integer, Future<Long>> pending = new LinkedHashMap<>();
-        Future<Long> totalFuture = null;
-        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Window> parts = dayWindows(window);
+        boolean partitioned = parts.size() > 1;
+        Map<Integer, List<Future<Long>>> pending = new LinkedHashMap<>();
+        pending.put(null, new ArrayList<>());
+        for (int status : STATUSES) pending.put(status, new ArrayList<>());
+        try (ExecutorService pool = Executors.newFixedThreadPool(partitioned ? RANGE_PARALLELISM : pending.size(), Thread.ofVirtual().factory())) {
             try {
-                totalFuture = pool.submit(() -> count(config, apiKey, window, null, deadline));
-                for (int value : STATUSES) pending.put(value, pool.submit(() -> count(config, apiKey, window, value, deadline)));
-                long total = await(totalFuture, deadline);
+                boolean official = P0_LIST_ENDPOINT.equals(URI.create(config.p0Endpoint));
+                for (var group : pending.entrySet()) {
+                    Integer status = group.getKey();
+                    for (Window part : countWindows(window, parts, status, official))
+                        group.getValue().add(pool.submit(() -> {
+                            if (!partitioned) return count(config, apiKey, part, status, deadline);
+                            if (!rangeCountSlots.tryAcquire(remaining(deadline).toNanos(), TimeUnit.NANOSECONDS))
+                                throw new IOException("P0 分段统计超时，请重试。");
+                            try { return count(config, apiKey, part, status, deadline); }
+                            finally { rangeCountSlots.release(); }
+                        }));
+                }
+                Long total = null;
                 Map<String, Long> counts = new LinkedHashMap<>();
                 Map<String, String> errors = new LinkedHashMap<>();
                 long classified = 0;
                 for (var entry : pending.entrySet()) {
                     try {
-                        long value = await(entry.getValue(), deadline);
-                        counts.put(entry.getKey().toString(), value);
-                        classified = Math.addExact(classified, value);
+                        long value = 0;
+                        for (Future<Long> part : entry.getValue())
+                            value = Math.addExact(value, await(part, deadline));
+                        if (entry.getKey() == null) total = value;
+                        else {
+                            counts.put(entry.getKey().toString(), value);
+                            classified = Math.addExact(classified, value);
+                        }
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw e;
                     } catch (Exception e) {
-                        errors.put(entry.getKey().toString(), "该状态统计未完成，请重试或缩短查询时间段。");
+                        if (entry.getKey() == null && !partitioned) throw e;
+                        errors.put(Objects.toString(entry.getKey(), "all"), "该项统计未完成，请重试。");
                     }
                 }
                 boolean complete = errors.isEmpty();
@@ -196,10 +294,31 @@ public final class TaskQueryService {
                 response.put("errors", errors);
                 return response;
             } finally {
-                if (totalFuture != null) totalFuture.cancel(true);
-                pending.values().forEach(f -> f.cancel(true));
+                pending.values().forEach(group -> group.forEach(f -> f.cancel(true)));
             }
         }
+    }
+
+    static List<Window> countWindows(Window window, List<Window> days, Integer status, boolean official) {
+        if (days.size() == 1 || !official || status == null || status == -1) return days;
+        // These three states are sparse on P0. Looking them up once avoids
+        // repeating the same search on each day that has no matching records.
+        if (status != 2) return List.of(window);
+        // A busy day of successful tasks can exceed the upstream gateway timeout.
+        List<Window> parts = new ArrayList<>();
+        for (Window day : days) {
+            ZonedDateTime start = day.start();
+            if (start.getOffset().equals(day.end().getOffset())) {
+                ZonedDateTime next = start.withMinute(0).withSecond(0).withNano(0).plusHours(3);
+                while (!next.isAfter(day.end())) {
+                    parts.add(new Window(start, next.minusNanos(1_000), window.filters()));
+                    start = next;
+                    next = next.plusHours(3);
+                }
+            }
+            parts.add(new Window(start, day.end(), window.filters()));
+        }
+        return parts;
     }
 
     /** Bounded drill-down of non-success tasks; source rows are never returned by this endpoint. */
@@ -383,7 +502,8 @@ public final class TaskQueryService {
     private HttpResponse<String> get(URI uri, String key, long deadline, boolean taskList) throws Exception {
         for (int attempt = 0; attempt < 2; attempt++) {
             Duration timeout = remaining(deadline);
-            if (timeout.compareTo(Duration.ofSeconds(10)) > 0) timeout = Duration.ofSeconds(10);
+            if (attempt == 0 && timeout.toNanos() > 1) timeout = timeout.dividedBy(2);
+            if (timeout.compareTo(Duration.ofSeconds(45)) > 0) timeout = Duration.ofSeconds(45);
             HttpRequest.Builder builder = HttpRequest.newBuilder(uri).GET().timeout(timeout).header("Accept", "application/json");
             if (taskList) builder.header("canary", "true");
             if (!key.isBlank()) builder.header("apikey", key);
@@ -393,7 +513,7 @@ public final class TaskQueryService {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw e; }
             catch (TimeoutException | ExecutionException e) {
                 if (attempt == 0) continue;
-                throw new IOException("P0 查询超时或网络异常（总时限 " + budget.toSeconds() + " 秒），"
+                throw new IOException("P0 查询超时或网络异常，"
                         + (taskList ? "请缩短时间段后重试。" : "请稍后重试。"));
             } finally { if (!future.isDone()) future.cancel(true); }
             int code = response.statusCode();

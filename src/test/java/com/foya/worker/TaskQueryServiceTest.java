@@ -128,6 +128,77 @@ class TaskQueryServiceTest {
         assertTrue(json.contains("已隐藏"));
     }
 
+    @Test void monthStatisticsAddEveryDayOnceIncludingBothPartialDays() throws Exception {
+        Map<String, Set<String>> bounds = new ConcurrentHashMap<>();
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger active = new AtomicInteger(), peak = new AtomicInteger();
+        serve(q -> {
+            peak.accumulateAndGet(active.incrementAndGet(), Math::max);
+            try {
+                assertEquals("flow", q.get("task_type"));
+                assertEquals("channel", q.get("hash_key"));
+                assertEquals("task", q.get("task_id"));
+                String status = q.getOrDefault("status", "all");
+                String interval = q.get("start_time") + "/" + q.get("end_time");
+                bounds.computeIfAbsent(status, k -> ConcurrentHashMap.newKeySet()).add(interval);
+                calls.incrementAndGet();
+                int total = status.equals("all") ? 5 : 1;
+                return "{\"total_count\":" + total + ",\"tasks\":[{\"status\":" + q.getOrDefault("status", "2") + "}]}";
+            } finally { active.decrementAndGet(); }
+        });
+        Map<String, String> params = Map.of("start_time", "2026-10-23T02:03:04.123456", "end_time", "2026-11-22T15:36:10.999999",
+                "task_type", "flow", "hash_key", "channel", "task_id", "task", "status", "-1");
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService().statistics(config, params));
+        assertTrue(result.path("complete").asBoolean());
+        assertEquals(155, result.path("total").asLong());
+        assertEquals(31, result.path("counts").path("-1").asLong());
+        assertEquals(0, result.path("snapshotDifference").asLong());
+        assertEquals(31 * 6, calls.get());
+        assertTrue(peak.get() <= 4);
+        Set<String> expected = new HashSet<>();
+        for (var date = java.time.LocalDate.parse("2026-10-23"); !date.isAfter(java.time.LocalDate.parse("2026-11-22")); date = date.plusDays(1)) {
+            String start = date.getDayOfMonth() == 23 ? params.get("start_time") : date + "T00:00:00.000000";
+            String end = date.toString().equals("2026-11-22") ? params.get("end_time") : date + "T23:59:59.999999";
+            expected.add(start + "/" + end);
+        }
+        assertEquals(Set.of("all", "-1", "0", "1", "2", "3"), bounds.keySet());
+        bounds.values().forEach(actual -> assertEquals(expected, actual));
+    }
+
+    @Test void missingDailyCountNeverBecomesAnIntervalTotal() throws Exception {
+        serve(q -> {
+            if (q.get("start_time").startsWith("2026-11-05") && (q.get("status") == null || "-1".equals(q.get("status"))))
+                return "{\"success\":false}";
+            return "{\"total_count\":1,\"tasks\":[{\"status\":" + q.getOrDefault("status", "2") + "}]}";
+        });
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService().statistics(config, Map.of(
+                "start_time", "2026-11-04T00:00:00", "end_time", "2026-11-06T00:00:00")));
+        assertFalse(result.path("complete").asBoolean());
+        assertTrue(result.path("total").isNull());
+        assertFalse(result.path("counts").has("-1"));
+        assertEquals(3, result.path("counts").path("0").asLong());
+        assertTrue(result.path("errors").has("all"));
+        assertTrue(result.path("errors").has("-1"));
+    }
+
+    @Test void officialMonthQueriesKeepSparseStatesTogetherAndSplitSuccessfulTasksWithoutGaps() {
+        var window = TaskQueryService.window(new AppConfig(), Map.of(
+                "start_time", "2026-10-23T10:15:16.123456", "end_time", "2026-11-22T15:36:10.999999"));
+        var days = TaskQueryService.dayWindows(window);
+        for (int status : List.of(0, 1, 3))
+            assertEquals(List.of(window), TaskQueryService.countWindows(window, days, status, true));
+        assertEquals(days, TaskQueryService.countWindows(window, days, null, true));
+        assertEquals(days, TaskQueryService.countWindows(window, days, -1, true));
+        var cursor = window.start();
+        for (var part : TaskQueryService.countWindows(window, days, 2, true)) {
+            assertEquals(cursor, part.start());
+            assertFalse(part.end().isBefore(part.start()));
+            assertFalse(part.end().isAfter(part.start().plusHours(3)));
+            cursor = part.end().plusNanos(1_000);
+        }
+        assertEquals(window.end().plusNanos(1_000), cursor);
+    }
+
     @Test void missingTotalRequiresCompletePaginationAndDoesNotTreatPageLengthAsTotal() throws Exception {
         serve(q -> {
             int page = Integer.parseInt(q.get("page"));
@@ -218,6 +289,66 @@ class TaskQueryServiceTest {
             assertEquals(page < 5, result.path("hasMore").asBoolean());
         }
         assertEquals(100, seen.size());
+    }
+
+    @Test void monthlyListTraversesOnlyNeededDaysAndPagesInSourceOrder() throws Exception {
+        // Include ties, exact midnight boundaries and empty days. The source silently caps requests at two rows.
+        List<String> times = List.of("2026-11-22T15:36:10.999999", "2026-11-22T15:36:10.999999",
+                "2026-11-22T00:00:00.000000", "2026-11-21T23:59:59.999999", "2026-11-21T01:00:00.000000",
+                "2026-11-20T03:00:00.000000", "2026-11-15T01:00:00.000000", "2026-10-23T00:00:00.000000");
+        List<Map<String,String>> requests = new CopyOnWriteArrayList<>();
+        serve(q -> {
+            requests.add(q);
+            int size = Math.min(2, Integer.parseInt(q.get("page_size")));
+            int offset = (Integer.parseInt(q.get("page")) - 1) * size;
+            List<Map<String,Object>> matched = new ArrayList<>();
+            for (int index = 0; index < times.size(); index++) {
+                String timestamp = times.get(index);
+                if (timestamp.compareTo(q.get("start_time")) >= 0 && timestamp.compareTo(q.get("end_time")) <= 0)
+                    matched.add(Map.of("uuid", "row-" + index, "created_at", timestamp, "status", 0,
+                            "task_type", "flow", "hash_key", "hash", "task_id", "bid"));
+            }
+            return Json.MAPPER.valueToTree(Map.of("total_count", matched.size(), "tasks",
+                    matched.subList(Math.min(offset, matched.size()), Math.min(offset + size, matched.size())))).toString();
+        });
+        TaskQueryService service = new TaskQueryService();
+        var window = TaskQueryService.window(config, Map.of("start_time", "2026-10-23T00:00:00.000000",
+                "end_time", "2026-11-22T15:36:10.999999", "task_type", "flow", "hash_key", "hash", "task_id", "bid"));
+        for (int number = 1; number <= 3; number++) {
+            requests.clear();
+            var result = service.listRecentFirst(config, "", window, 0, number, 4,
+                    System.nanoTime() + Duration.ofSeconds(20).toNanos());
+            List<String> ids = result.rows().stream().map(row -> row.path("uuid").asText()).toList();
+            List<String> expected = switch (number) {
+                case 1 -> List.of("row-0", "row-1", "row-2", "row-3");
+                case 2 -> List.of("row-4", "row-5", "row-6", "row-7");
+                default -> List.of();
+            };
+            assertEquals(expected, ids);
+            assertEquals(4, result.pageSize());
+            assertEquals(number == 1, result.hasMore());
+            if (number == 1) {
+                assertNull(result.total());
+                assertTrue(requests.size() < 10, "page one must stop before scanning the whole month");
+            } else assertEquals(8L, result.total());
+            assertTrue(requests.stream().allMatch(q -> "flow".equals(q.get("task_type"))
+                    && "hash".equals(q.get("hash_key")) && "bid".equals(q.get("task_id")) && "0".equals(q.get("status"))));
+        }
+    }
+
+    @Test void longListFromCompatibleSourcePreservesItsOrderingAndSingleRange() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        serve(q -> {
+            calls.incrementAndGet();
+            return "{\"total_count\":2,\"tasks\":[{\"uuid\":\"old\",\"created_at\":\"2026-10-23T12:00:00\"},"
+                    + "{\"uuid\":\"new\",\"created_at\":\"2026-11-22T12:00:00\"}]}";
+        });
+        var params = Map.of("start_time", "2026-10-23T00:00:00", "end_time", "2026-11-22T15:36:10");
+        JsonNode result = Json.MAPPER.valueToTree(new TaskQueryService().list(config, params));
+        assertEquals("old", result.at("/items/0/uuid").asText());
+        assertEquals("new", result.at("/items/1/uuid").asText());
+        assertEquals(2, result.path("total").asLong());
+        assertEquals(1, calls.get());
     }
 
     @Test void singleSlowStatusPreservesCompletedStatusZeroStatisticsAtSharedDeadline() throws Exception {
