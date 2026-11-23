@@ -30,19 +30,21 @@ public final class TaskQueryService {
     private final Semaphore rangeCountSlots = new Semaphore(RANGE_PARALLELISM, true);
     private final String uuidApiKey;
     private final URI uuidApiOrigin;
+    private final URI officialListEndpoint;
 
     public TaskQueryService() {
-        this(Duration.ofSeconds(20), Duration.ofMinutes(6), System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN);
+        this(Duration.ofSeconds(20), Duration.ofMinutes(6), System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN, P0_LIST_ENDPOINT);
     }
     TaskQueryService(Duration budget) { this(budget, System.getenv("P0_UUID_API_KEY"), P0_PUBLIC_ORIGIN); }
     TaskQueryService(Duration budget, String uuidApiKey, URI uuidApiOrigin) {
-        this(budget, budget, uuidApiKey, uuidApiOrigin);
+        this(budget, budget, uuidApiKey, uuidApiOrigin, P0_LIST_ENDPOINT);
     }
-    private TaskQueryService(Duration budget, Duration longRangeBudget, String uuidApiKey, URI uuidApiOrigin) {
+    TaskQueryService(Duration budget, Duration longRangeBudget, String uuidApiKey, URI uuidApiOrigin, URI officialListEndpoint) {
         this.budget = budget;
         this.longRangeBudget = longRangeBudget;
         this.uuidApiKey = Objects.toString(uuidApiKey, "").strip();
         this.uuidApiOrigin = uuidApiOrigin;
+        this.officialListEndpoint = officialListEndpoint;
     }
 
     record Window(ZonedDateTime start, ZonedDateTime end, Map<String, String> filters) {}
@@ -105,9 +107,10 @@ public final class TaskQueryService {
         int pageSize = integer(params.get("page_size"), 50, 1, 200, "每页条数");
         String apiKey = P0Client.resolveApiKey(config);
         // P0 orders by created_at and _id descending. Compatible endpoints can use a different order.
-        Page result = P0_LIST_ENDPOINT.equals(URI.create(config.p0Endpoint))
-                && longRange(window)
-                ? listRecentFirst(config, apiKey, window, status, page, pageSize, deadline)
+        List<Window> parts = officialListEndpoint.equals(URI.create(config.p0Endpoint))
+                ? queryWindows(window, dayWindows(window), status, true) : List.of(window);
+        Page result = parts.size() > 1
+                ? listRecentFirst(config, apiKey, parts, status, page, pageSize, deadline)
                 : request(config, apiKey, window, status, page, pageSize, deadline);
         long endOffset = (long) (page - 1) * result.pageSize() + result.rows().size();
         if (result.total() != null && (Boolean.FALSE.equals(result.hasMore()) && endOffset < result.total()
@@ -125,9 +128,8 @@ public final class TaskQueryService {
         return response;
     }
 
-    Page listRecentFirst(AppConfig config, String key, Window window, Integer status,
-                         int page, int pageSize, long deadline) throws Exception {
-        var windows = dayWindows(window);
+    private Page listRecentFirst(AppConfig config, String key, List<Window> windows, Integer status,
+                                 int page, int pageSize, long deadline) throws Exception {
         List<JsonNode> rows = new ArrayList<>(pageSize);
         Set<String> seen = new HashSet<>();
         long startOffset = (long) (page - 1) * pageSize;
@@ -159,7 +161,7 @@ public final class TaskQueryService {
                 }
                 localStart = partOffset + to;
             }
-            // A full last page may be followed only by empty days. Check until we find
+            // A full last page may be followed only by empty slices. Check until we find
             // another row or exhaust the range before offering a next page.
             if (counted > endOffset && i > 0) return new Page(rows, null, true, pageSize);
         }
@@ -247,10 +249,10 @@ public final class TaskQueryService {
         for (int status : STATUSES) pending.put(status, new ArrayList<>());
         try (ExecutorService pool = Executors.newFixedThreadPool(partitioned ? RANGE_PARALLELISM : pending.size(), Thread.ofVirtual().factory())) {
             try {
-                boolean official = P0_LIST_ENDPOINT.equals(URI.create(config.p0Endpoint));
+                boolean official = officialListEndpoint.equals(URI.create(config.p0Endpoint));
                 for (var group : pending.entrySet()) {
                     Integer status = group.getKey();
-                    for (Window part : countWindows(window, parts, status, official))
+                    for (Window part : queryWindows(window, parts, status, official))
                         group.getValue().add(pool.submit(() -> {
                             if (!partitioned) return count(config, apiKey, part, status, deadline);
                             if (!rangeCountSlots.tryAcquire(remaining(deadline).toNanos(), TimeUnit.NANOSECONDS))
@@ -299,7 +301,7 @@ public final class TaskQueryService {
         }
     }
 
-    static List<Window> countWindows(Window window, List<Window> days, Integer status, boolean official) {
+    static List<Window> queryWindows(Window window, List<Window> days, Integer status, boolean official) {
         if (days.size() == 1 || !official || status == null || status == -1) return days;
         // These three states are sparse on P0. Looking them up once avoids
         // repeating the same search on each day that has no matching records.

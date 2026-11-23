@@ -186,11 +186,11 @@ class TaskQueryServiceTest {
                 "start_time", "2026-10-23T10:15:16.123456", "end_time", "2026-11-22T15:36:10.999999"));
         var days = TaskQueryService.dayWindows(window);
         for (int status : List.of(0, 1, 3))
-            assertEquals(List.of(window), TaskQueryService.countWindows(window, days, status, true));
-        assertEquals(days, TaskQueryService.countWindows(window, days, null, true));
-        assertEquals(days, TaskQueryService.countWindows(window, days, -1, true));
+            assertEquals(List.of(window), TaskQueryService.queryWindows(window, days, status, true));
+        assertEquals(days, TaskQueryService.queryWindows(window, days, null, true));
+        assertEquals(days, TaskQueryService.queryWindows(window, days, -1, true));
         var cursor = window.start();
-        for (var part : TaskQueryService.countWindows(window, days, 2, true)) {
+        for (var part : TaskQueryService.queryWindows(window, days, 2, true)) {
             assertEquals(cursor, part.start());
             assertFalse(part.end().isBefore(part.start()));
             assertFalse(part.end().isAfter(part.start().plusHours(3)));
@@ -291,10 +291,15 @@ class TaskQueryServiceTest {
         assertEquals(100, seen.size());
     }
 
-    @Test void monthlyListTraversesOnlyNeededDaysAndPagesInSourceOrder() throws Exception {
+    TaskQueryService officialSource() {
+        URI endpoint = URI.create(config.p0Endpoint);
+        return new TaskQueryService(Duration.ofSeconds(5), Duration.ofSeconds(20), "", endpoint.resolve("/"), endpoint);
+    }
+
+    @Test void monthlyListTraversesOnlyNeededSlicesAndPagesInSourceOrder() throws Exception {
         // Include ties, exact midnight boundaries and empty days. The source silently caps requests at two rows.
         List<String> times = List.of("2026-11-22T15:36:10.999999", "2026-11-22T15:36:10.999999",
-                "2026-11-22T00:00:00.000000", "2026-11-21T23:59:59.999999", "2026-11-21T01:00:00.000000",
+                "2026-11-22T15:00:00.000000", "2026-11-22T00:00:00.000000", "2026-11-21T23:59:59.999999",
                 "2026-11-20T03:00:00.000000", "2026-11-15T01:00:00.000000", "2026-10-23T00:00:00.000000");
         List<Map<String,String>> requests = new CopyOnWriteArrayList<>();
         serve(q -> {
@@ -305,34 +310,58 @@ class TaskQueryServiceTest {
             for (int index = 0; index < times.size(); index++) {
                 String timestamp = times.get(index);
                 if (timestamp.compareTo(q.get("start_time")) >= 0 && timestamp.compareTo(q.get("end_time")) <= 0)
-                    matched.add(Map.of("uuid", "row-" + index, "created_at", timestamp, "status", 0,
+                    matched.add(Map.of("uuid", "row-" + index, "created_at", timestamp, "status", 2,
                             "task_type", "flow", "hash_key", "hash", "task_id", "bid"));
             }
             return Json.MAPPER.valueToTree(Map.of("total_count", matched.size(), "tasks",
                     matched.subList(Math.min(offset, matched.size()), Math.min(offset + size, matched.size())))).toString();
         });
-        TaskQueryService service = new TaskQueryService();
-        var window = TaskQueryService.window(config, Map.of("start_time", "2026-10-23T00:00:00.000000",
-                "end_time", "2026-11-22T15:36:10.999999", "task_type", "flow", "hash_key", "hash", "task_id", "bid"));
+        TaskQueryService service = officialSource();
+        var params = new HashMap<>(Map.of("start_time", "2026-10-23T00:00:00.000000", "end_time", "2026-11-22T15:36:10.999999",
+                "task_type", "flow", "hash_key", "hash", "task_id", "bid", "page_size", "4", "status", "2"));
         for (int number = 1; number <= 3; number++) {
             requests.clear();
-            var result = service.listRecentFirst(config, "", window, 0, number, 4,
-                    System.nanoTime() + Duration.ofSeconds(20).toNanos());
-            List<String> ids = result.rows().stream().map(row -> row.path("uuid").asText()).toList();
+            params.put("page", Integer.toString(number));
+            JsonNode result = Json.MAPPER.valueToTree(service.list(config, params));
+            List<String> ids = result.path("items").findValuesAsText("uuid");
             List<String> expected = switch (number) {
                 case 1 -> List.of("row-0", "row-1", "row-2", "row-3");
                 case 2 -> List.of("row-4", "row-5", "row-6", "row-7");
                 default -> List.of();
             };
             assertEquals(expected, ids);
-            assertEquals(4, result.pageSize());
-            assertEquals(number == 1, result.hasMore());
+            assertEquals(4, result.path("pageSize").asInt());
+            assertEquals(number == 1, result.path("hasMore").asBoolean());
             if (number == 1) {
-                assertNull(result.total());
-                assertTrue(requests.size() < 10, "page one must stop before scanning the whole month");
-            } else assertEquals(8L, result.total());
+                assertTrue(result.path("total").isNull());
+                assertTrue(requests.size() < 20, "page one must stop before scanning the whole month");
+            } else assertEquals(8L, result.path("total").asLong());
             assertTrue(requests.stream().allMatch(q -> "flow".equals(q.get("task_type"))
-                    && "hash".equals(q.get("hash_key")) && "bid".equals(q.get("task_id")) && "0".equals(q.get("status"))));
+                    && "hash".equals(q.get("hash_key")) && "bid".equals(q.get("task_id")) && "2".equals(q.get("status"))));
+            for (var q : requests) {
+                Duration span = Duration.between(java.time.LocalDateTime.parse(q.get("start_time")),
+                        java.time.LocalDateTime.parse(q.get("end_time")));
+                assertTrue(span.compareTo(Duration.ofHours(3)) < 0, "success queries must use three-hour slices");
+            }
+        }
+    }
+
+    @Test void monthlySparseStatusListRequestsOneRangeWithOriginalPageNumber() throws Exception {
+        List<Map<String,String>> requests = new CopyOnWriteArrayList<>();
+        serve(q -> {
+            requests.add(q);
+            return "{\"total_count\":2,\"tasks\":[{\"status\":" + q.get("status") + "}]}";
+        });
+        var params = new HashMap<>(Map.of("start_time", "2026-10-23T00:00:00.000000",
+                "end_time", "2026-11-22T15:36:10.999999", "page", "2", "page_size", "1"));
+        var service = officialSource();
+        for (String status : List.of("0", "1", "3")) {
+            requests.clear();
+            params.put("status", status);
+            JsonNode result = Json.MAPPER.valueToTree(service.list(config, params));
+            assertEquals(List.of(params), requests);
+            assertEquals(2, result.path("total").asLong());
+            assertFalse(result.path("hasMore").asBoolean());
         }
     }
 
